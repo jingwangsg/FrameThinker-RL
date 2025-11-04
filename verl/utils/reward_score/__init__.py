@@ -61,7 +61,7 @@ def _default_compute_score(data_source, solution_str, ground_truth, extra_info=N
         from . import agent
         res = agent.compute_score_eval(solution_str, ground_truth)
 
-    elif data_source in ['vstar', 'vl_agent', 'chart']:
+    elif data_source in ['vstar', 'vl_agent', 'chart', 'TencentARC/Video-Holmes']:
         from . import think_with_video_reward
         return think_with_video_reward.compute_score(solution_str, ground_truth, extra_info)
 

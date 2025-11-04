@@ -1,0 +1,13 @@
+env_vars:
+  PATH: /mnt/aws-lfs-01/shared/jingwang/PROJECTS/video_reason/pubs/FrameThinker-RL/.venv/bin/:$PATH
+  VERL_LOGGING_LEVEL: DEBUG
+  RAY_ENABLE_RECORD_ACTOR_TASK_LOGGING: "1"
+  TRITON_CACHE_DIR: /tmp/.triton/cache/
+  RAY_DEBUG: "1"
+  # RAY_DEBUG_POST_MORTEM: "1"
+py_executable: /mnt/aws-lfs-01/shared/jingwang/PROJECTS/video_reason/pubs/FrameThinker-RL/.venv/bin/python
+working_dir: /mnt/aws-lfs-01/shared/jingwang/PROJECTS/video_reason/pubs/FrameThinker-RL/
+excludes:
+  - .git/
+  - .venv/
+  - .claude/

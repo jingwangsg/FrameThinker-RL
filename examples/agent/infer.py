@@ -5,18 +5,18 @@ import re
 import numpy as np
 import shutil
 import torch
-import torch.multiprocessing as mp
+import sglang as sgl
 import argparse
 from collections import defaultdict
-from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
-from qwen_vl_utils import process_vision_info
+from itertools import combinations
 import decord
 
 CONFIG = {
-    "MODEL_PATH": "",
-    "BASE_VIDEO_DIR": "",
-    "BASE_FRAME_DIR_ROOT": "",
-    "TARGET_JSON_PATH": "",
+    # "MODEL_PATH": "/mnt/aws-lfs-01/shared/checkpoints/jingwang/video_reason/sft/qwen2_5vl_7b_sft_full_framethinker_base/",
+    "MODEL_PATH": "Qwen/Qwen2.5-VL-7B-Instruct",
+    "BASE_VIDEO_DIR": "/mnt/aws-lfs-01/shared/datasets/s3:/video_reason/",
+    "BASE_FRAME_DIR_ROOT": "/tmp/video_frames",
+    "TARGET_JSON_PATH": "/mnt/aws-lfs-01/shared/datasets/s3:/video_reason/Video-Holmes/test.json",
     "MAX_ITERATIONS": 5,
     "MAX_RETRIES": 3,
     "NUM_FRAMES_TO_SAMPLE": 8,
@@ -29,21 +29,83 @@ CONFIG = {
 }
 
 
-def load_model_and_processor(model_path, device):
-    model = Qwen2_5_VLForConditionalGeneration.from_pretrained(model_path, torch_dtype="auto").to(device)
-    processor = AutoProcessor.from_pretrained(model_path)
-    return model, processor
+def load_sglang_engine(model_path, tp_size=1):
+    """Load SGLang engine for vision-language model inference"""
+    # Import sglang here to ensure CUDA is initialized first
+
+    engine = sgl.Engine(
+        model_path=model_path,
+        tp_size=tp_size,
+        trust_remote_code=True,
+        chat_template="qwen2-vl",
+        mm_attention_backend="sdpa",
+    )
+    return engine
 
 
-def run_inference(model, processor, messages, device):
-    text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-    image_inputs, video_inputs = process_vision_info(messages)
-    inputs = processor(text=[text], images=image_inputs, videos=video_inputs, padding=True, return_tensors="pt").to(
-        device)
-    generated_ids = model.generate(**inputs, max_new_tokens=2048, do_sample=True, temperature=0.6, top_p=0.9)
-    generated_ids_trimmed = [out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)]
-    output_text = \
-    processor.batch_decode(generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
+def convert_messages_to_sglang_format(messages):
+    """
+    Convert transformers-style messages to SGLang format.
+
+    Returns:
+        prompt: Formatted prompt string with <image> tokens
+        image_paths: List of image file paths
+    """
+    from sglang.srt.parser.conversation import chat_templates
+
+    chat_template = chat_templates["qwen2-vl"].copy()
+    image_token = chat_template.image_token
+    image_paths = []
+
+    for message in messages:
+        role = message["role"]
+        content = message["content"]
+
+        if role == "system":
+            chat_template.set_system_message(content)
+        elif role == "user":
+            if isinstance(content, str):
+                # Simple text content
+                chat_template.append_message(chat_template.roles[0], content)
+            elif isinstance(content, list):
+                # Mixed content with text and images
+                user_text_parts = []
+                for item in content:
+                    if item["type"] == "text":
+                        user_text_parts.append(item["text"])
+                    elif item["type"] == "image":
+                        user_text_parts.append(image_token)
+                        image_paths.append(item["image"])
+
+                user_message = "\n".join(user_text_parts)
+                chat_template.append_message(chat_template.roles[0], user_message)
+        elif role == "assistant":
+            chat_template.append_message(chat_template.roles[1], content)
+
+    # Add empty assistant message for generation
+    chat_template.append_message(chat_template.roles[1], None)
+
+    prompt = chat_template.get_prompt()
+    return prompt, image_paths
+
+
+def run_inference(engine, messages):
+    """Run inference using SGLang engine"""
+    prompt, image_paths = convert_messages_to_sglang_format(messages)
+
+    # Generate response using SGLang
+    outputs = engine.generate(
+        prompt=prompt,
+        image_data=image_paths if image_paths else None,
+        sampling_params={"temperature": 0.6, "top_p": 0.9, "max_new_tokens": 2048}
+    )
+
+    # Extract text from outputs
+    if isinstance(outputs, list):
+        output_text = outputs[0]["text"] if outputs else ""
+    else:
+        output_text = outputs.get("text", str(outputs))
+
     return output_text
 
 
@@ -121,7 +183,7 @@ def handle_get_frame_number(action_content, fps):
 
 def handle_choose_frames(action_content, video_path, video_id, iteration, total_frames, base_frame_dir,
                          num_frames_to_sample, max_width, max_height):
-    match = re.search(r"choose frames between\s+(\d+)\s+and\s+(\d+)", action_content)
+    match = re.search(r"choose frames (.*)\s+(\d+)\s+and\s+(\d+)", action_content)
     if not match: return None
     try:
         start_frame, end_frame = map(int, match.groups())
@@ -142,6 +204,20 @@ def parse_frame_number(filepath: str) -> int:
     if match:
         return int(match.group(1))
     return -1
+
+def count_choose_frames_actions(conversation_history: list) -> int:
+    """Count how many 'choose frames between' actions appear in assistant messages."""
+    count = 0
+    for turn in conversation_history:
+        if turn.get("role") == "assistant":
+            content = turn.get("content", "")
+            if isinstance(content, str):
+                # Find all <action> tags
+                action_matches = re.findall(r'<action>(.*?)</action>', content, re.DOTALL)
+                for action in action_matches:
+                    if action.strip().startswith("choose frames between"):
+                        count += 1
+    return count
 
 def stringify_conversation(conversation_history: dict):
     print(conversation_history)
@@ -230,9 +306,18 @@ def validate_reasoning_process(predict_str: str, num_frames_to_sample: int):
     return True, tool_call_count, image_add_count
 
 
-def process_single_problem(qa_item, model, processor, device, rank):
-    video_id, question, correct_answer = qa_item['video'], qa_item['question'], qa_item['answer']
-    video_path = os.path.join(CONFIG["BASE_VIDEO_DIR"], f"{video_id}.mp4")
+def process_single_problem(qa_item, engine, base_frame_dir_root, rank=0):
+    # Extract Video-Holmes format data
+    video_rel_path = qa_item['video_path']  # e.g., "Video-Holmes/videos/xxx.mp4"
+    video_path = os.path.join(CONFIG["BASE_VIDEO_DIR"], video_rel_path)
+    video_id = qa_item['metadata']['video_id']
+    correct_answer = qa_item['metadata']['answer_key']  # Option letter (A, B, C, etc.)
+
+    # Format question with options
+    question = qa_item['question']
+    options = qa_item['metadata']['options']
+    options_text = '\n'.join([f"{key}. {value}" for key, value in sorted(options.items())])
+    question = f"{question}\n{options_text}"
 
     fps, frame_count = get_video_metadata(video_path)
     if frame_count == 0 or fps == 0: return {"status": "format_error"}
@@ -250,7 +335,7 @@ def process_single_problem(qa_item, model, processor, device, rank):
     system_prompt = f"You are an expert AI assistant that answers questions about a video by iteratively analyzing it.\nYour task is to output your reasoning within a <think> </think> tag, followed by a specific action within an <action> </action> tag.\nPossible actions are:\n1. `choose frames between START_FRAME and END_FRAME`: Request a more detailed view of a specific video segment. The number of frames is fixed, currently {num_frames_to_sample}.\n2. `get frame number at time MM:SS`: Get the exact frame number for a specific time. Convert hours to minutes if needed (e.g., for 1 hour, 2 minutes, and 30 seconds, use 62:30).\n3. `output answer: OPTION`: Provide the final answer (e.g., A, B, C...) when you are confident."
 
     initial_prompt_text = f"{question}\n"
-    base_frame_dir = os.path.join(CONFIG["BASE_FRAME_DIR_ROOT"], f"gpu_{rank}")
+    base_frame_dir = os.path.join(base_frame_dir_root, f"gpu_{rank}")
 
     for times in range(CONFIG["MAX_RETRIES"]):
         if times > 1:
@@ -275,7 +360,7 @@ def process_single_problem(qa_item, model, processor, device, rank):
 
         final_answer = None
         for i in range(CONFIG["MAX_ITERATIONS"]):
-            model_response_str = run_inference(model, processor, conversation_history, device)
+            model_response_str = run_inference(engine, conversation_history)
             conversation_history.append({"role": "assistant", "content": model_response_str})
 
             _, action = parse_model_response(model_response_str)
@@ -298,9 +383,18 @@ def process_single_problem(qa_item, model, processor, device, rank):
             if is_valid:
                 images_used = num_frames_to_sample * (1 + image_adds)
                 status = "correct" if final_answer == correct_answer else "wrong_answer"
-                return {"status": status, "tool_calls": tool_calls, "images_used": images_used}
 
-    return {"status": "format_error"}
+                # Count choose frames actions and print results
+                choose_frames_count = count_choose_frames_actions(conversation_history)
+                answer_match = "correct" if final_answer == correct_answer else "wrong"
+                print(f"[GPU {rank}] video_id: {video_id} | Answer: {answer_match} | Choose frames count: {choose_frames_count}")
+
+                return {"status": status, "tool_calls": tool_calls, "images_used": images_used, "choose_frames_count": choose_frames_count}
+
+    # Print format error case
+    choose_frames_count = count_choose_frames_actions(conversation_history)
+    print(f"[GPU {rank}] video_id: {video_id} | Answer: format_error | Choose frames count: {choose_frames_count}")
+    return {"status": "format_error", "choose_frames_count": choose_frames_count}
 
 
 def aggregate_and_print_results(all_results):
@@ -314,6 +408,7 @@ def aggregate_and_print_results(all_results):
     total_wrong_answer = 0
     total_format_error = 0
     total_images_used = 0
+    total_choose_frames_count = 0
 
     for res in all_results:
         status = res.get("status")
@@ -323,13 +418,16 @@ def aggregate_and_print_results(all_results):
             stats[tool_calls]['correct'] += 1
             stats[tool_calls]['total'] += 1
             total_images_used += res.get("images_used", 0)
+            total_choose_frames_count += res.get("choose_frames_count", 0)
         elif status == "wrong_answer":
             total_wrong_answer += 1
             tool_calls = res.get("tool_calls", 0)
             stats[tool_calls]['total'] += 1
             total_images_used += res.get("images_used", 0)
+            total_choose_frames_count += res.get("choose_frames_count", 0)
         else:
             total_format_error += 1
+            total_choose_frames_count += res.get("choose_frames_count", 0)
 
     print("\n" + "=" * 50)
     print(" " * 15 + "AGGREGATED RESULTS")
@@ -337,6 +435,8 @@ def aggregate_and_print_results(all_results):
     print(f"Total Problems Processed: {total_problems}\n")
 
     print("--- Overall Performance ---")
+    accuracy = total_correct / total_problems if total_problems > 0 else 0
+    print(f"Accuracy: {accuracy:.2%} ({total_correct}/{total_problems})")
     print(f"Correct Answers: {total_correct} ({total_correct / total_problems:.2%})")
     print(f"Wrong Answers (Valid Format): {total_wrong_answer} ({total_wrong_answer / total_problems:.2%})")
     print(f"Format Errors (After Retries): {total_format_error} ({total_format_error / total_problems:.2%})")
@@ -354,6 +454,11 @@ def aggregate_and_print_results(all_results):
         avg_tool_calls = total_tool_calls_made / valid_format_problems
         print(f"Average Tool Calls Used (per valid problem): {avg_tool_calls:.2f}")
 
+    # Print average choose frames count for all problems
+    if total_problems > 0:
+        avg_choose_frames = total_choose_frames_count / total_problems
+        print(f"Average Choose Frames Count (per problem): {avg_choose_frames:.2f}")
+
     print("\n--- Tool Call Analysis (for valid format attempts) ---")
     sorted_tool_calls = sorted(stats.keys())
     for i in sorted_tool_calls:
@@ -365,49 +470,60 @@ def aggregate_and_print_results(all_results):
     print("=" * 50)
 
 
-def worker(rank, world_size, data_chunks, results_list):
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(rank)
-    device = torch.device(f"cuda:{rank}")
-    data_chunk = data_chunks[rank]
-    model, processor = load_model_and_processor(CONFIG["MODEL_PATH"], device)
-
-    local_results = []
-    for i, qa_item in enumerate(data_chunk):
-        print(f"[GPU {rank}] Processing item {i + 1}/{len(data_chunk)}...")
-        result = process_single_problem(qa_item, model, processor, device, rank)
-        local_results.append(result)
-
-    results_list.extend(local_results)
-
-
 def main():
-    parser = argparse.ArgumentParser(description="Run multi-GPU video QA evaluation.")
-    parser.add_argument("-n", "--num_gpus", type=int, default=CONFIG["DEFAULT_GPUS"],
-                        help=f"Number of GPUs to use. Default: {CONFIG['DEFAULT_GPUS']}")
+    parser = argparse.ArgumentParser(description="Run single-GPU video QA evaluation with SGLang.")
+    parser.add_argument("-m", "--model", type=str, default=CONFIG["MODEL_PATH"],
+                        help=f"Model path. Default: {CONFIG['MODEL_PATH']}")
+    parser.add_argument("--tp_size", type=int, default=1,
+                        help="Tensor parallelism size (default: 1)")
     args = parser.parse_args()
-    world_size = args.num_gpus
+    model_path = args.model
 
+    # Create unique temporary directory for this run (avoid conflicts with multiple concurrent runs)
+    pid = os.getpid()
+    base_frame_dir_root = f"/tmp/video_frames_pid_{pid}"
+    print(f"Using temporary directory: {base_frame_dir_root}")
+
+    # Set GPU device
+    print(f"Using TP size: {args.tp_size}")
+    print(f"Model path: {model_path}")
+
+    # Load dataset
     try:
         with open(CONFIG["TARGET_JSON_PATH"], 'r', encoding='utf-8') as f:
-            full_dataset = json.load(f)
+            dataset = json.load(f)
+        print(f"Loaded {len(dataset)} problems from dataset")
     except Exception as e:
         print(f"Error loading dataset: {e}")
         return
 
-    data_chunks = np.array_split(full_dataset, world_size)
+    # Initialize SGLang engine
+    print("Initializing SGLang engine...")
+    engine = load_sglang_engine(model_path, tp_size=args.tp_size)
+    print("✓ SGLang engine loaded successfully")
 
-    with mp.Manager() as manager:
-        results_list = manager.list()
-        mp.spawn(worker,
-                 args=(world_size, data_chunks, results_list),
-                 nprocs=world_size,
-                 join=True)
+    # Process each problem sequentially
+    all_results = []
+    for i, qa_item in enumerate(dataset):
+        print(f"\nProcessing item {i + 1}/{len(dataset)}...")
+        result = process_single_problem(qa_item, engine, base_frame_dir_root, rank=0)
+        all_results.append(result)
 
-        final_results = list(results_list)
+    # Cleanup
+    del engine
+    import gc
+    gc.collect()
+    torch.cuda.empty_cache()
 
-    aggregate_and_print_results(final_results)
+    # Print aggregated results
+    aggregate_and_print_results(all_results)
+
+    # Clean up temporary directory
+    if os.path.exists(base_frame_dir_root):
+        print(f"\nCleaning up temporary directory: {base_frame_dir_root}")
+        shutil.rmtree(base_frame_dir_root)
+        print("✓ Cleanup complete")
 
 
 if __name__ == "__main__":
-    mp.set_start_method("spawn", force=True)
     main()

@@ -1,20 +1,16 @@
 set -x
 
-BASE_DATA_DIR=
-PROJECT_NAME=
-EXPERIMENT_NAME=
-SAVE_CHECKPOINT_DIR=
-REF_MODEL_PATH=
-TRAIN_FILES=($(find "${BASE_DATA_DIR}" -type f -name "*.parquet"))
-VAL_FILES=()
-train_files_str=$(IFS=,; echo "${TRAIN_FILES[*]}")
-val_files_str=$(IFS=,; echo "${VAL_FILES[*]}")
+BASE_DATA_DIR=/mnt/aws-lfs-01/shared/datasets/s3:/video_reason/Video-Holmes
+PROJECT_NAME=video_holmes_rl
+EXPERIMENT_NAME=framethinker_baseline
+SAVE_CHECKPOINT_DIR=/mnt/aws-lfs-01/shared/checkpoints/jingwang/video_reason/
+REF_MODEL_PATH=Qwen/Qwen2.5-VL-7B-Instruct
+TRAIN_FILES=/mnt/aws-lfs-01/shared/datasets/s3:/video_reason/Video-Holmes/train.parquet
+VAL_FILES=/mnt/aws-lfs-01/shared/datasets/s3:/video_reason/Video-Holmes/test.parquet
 
 PYTHONUNBUFFERED=1  python3 -m verl.trainer.main_ppo \
-    +debug=False \
-    +vs_debug=False \
-    "data.train_files=[${train_files_str}]" \
-    "data.val_files=[${val_files_str}]" \
+    "data.train_files=[${TRAIN_FILES}]" \
+    "data.val_files=[${VAL_FILES}]" \
     data.train_batch_size=32 \
     data.max_prompt_length=8192 \
     data.max_response_length=8192 \
@@ -54,8 +50,8 @@ PYTHONUNBUFFERED=1  python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.agent.max_vllm_images=128 \
     trainer.critic_warmup=0 \
     trainer.logger=['console','swanlab'] \
-    trainer.n_gpus_per_node=8 \
-    trainer.nnodes=1 \
+    trainer.n_gpus_per_node=4 \
+    trainer.nnodes=2 \
     trainer.save_freq=50 \
     trainer.val_before_train=False \
     trainer.test_freq=-1 \
