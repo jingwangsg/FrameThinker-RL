@@ -120,13 +120,21 @@ def apply_monkey_patch(model: PreTrainedModel, ulysses_sp_size: int):
     )
     # TODO: VLM models only, unify monkey patch to LLM models.
     if model.config.model_type in ("qwen2_vl", "qwen2_5_vl"):  # patch remove padding for qwen2vl mrope
-        from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import Qwen2_5_VLFlashAttention2
-        from transformers.models.qwen2_vl.modeling_qwen2_vl import Qwen2VLFlashAttention2
+        # Version-aware imports for forward compatibility with transformers >= 4.53.0
+        if is_transformers_version_in_range(min_version="4.53.0"):
+            from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import Qwen2_5_VLAttention
+        else:
+            from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import Qwen2_5_VLFlashAttention2 as Qwen2_5_VLAttention
+
+        if is_transformers_version_in_range(min_version="4.53.0"):
+            from transformers.models.qwen2_vl.modeling_qwen2_vl import Qwen2VLAttention
+        else:
+            from transformers.models.qwen2_vl.modeling_qwen2_vl import Qwen2VLFlashAttention2 as Qwen2VLAttention
 
         from verl.models.transformers.qwen2_vl import ulysses_flash_attn_forward
 
-        Qwen2VLFlashAttention2.forward = ulysses_flash_attn_forward
-        Qwen2_5_VLFlashAttention2.forward = ulysses_flash_attn_forward
+        Qwen2VLAttention.forward = ulysses_flash_attn_forward
+        Qwen2_5_VLAttention.forward = ulysses_flash_attn_forward
         print("Monkey patch FlashAttention2.forward in Qwen2VL")
         return
 
@@ -149,7 +157,7 @@ from packaging import version
 
 
 @lru_cache
-def is_transformers_version_in_range(min_version: str, max_version: str) -> bool:
+def is_transformers_version_in_range(min_version: str, max_version: str = "999.999.999") -> bool:
     try:
         # Get the installed version of the transformers library
         transformers_version = importlib.metadata.version("transformers")
