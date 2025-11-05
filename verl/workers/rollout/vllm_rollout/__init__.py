@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from importlib.metadata import PackageNotFoundError, version
+from packaging import version as vs
 
 ###
 # [SUPPORT AMD:]
@@ -43,10 +44,12 @@ else:
     package_version = get_version(package_name)
 ###
 
-if package_version <= "0.6.3":
+if package_version and vs.parse(package_version) <= vs.parse("0.6.3"):
     vllm_mode = "customized"
+    print(f"using customized vllm rollout, vllm version: {package_version}")
     from .fire_vllm_rollout import FIREvLLMRollout
     from .vllm_rollout import vLLMRollout
-else:
+else:   
     vllm_mode = "spmd"
+    print(f"using SPMD vllm rollout, vllm version: {package_version}")
     from .vllm_rollout_spmd import vLLMRollout

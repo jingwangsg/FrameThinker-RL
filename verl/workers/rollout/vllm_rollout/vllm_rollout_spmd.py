@@ -58,12 +58,16 @@ logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 def _pre_process_inputs(pad_token_id, prompt_token_ids: torch.Tensor) -> List[int]:
     # remove the left padding in the prompt token_id
     # pad_token_id = self.llm_engine.tokenizer.pad_token_id if self.llm_engine.tokenizer.pad_token_id is not None else self.llm_engine.tokenizer.eos_token_id
-    non_pad_index = torch.nonzero(prompt_token_ids != pad_token_id, as_tuple=False)[0][0]
+    non_pad_index = torch.nonzero(prompt_token_ids != pad_token_id, as_tuple=False)[0][
+        0
+    ]
     token_ids = prompt_token_ids[non_pad_index:].tolist()
     return token_ids
 
 
-def _repeat_interleave(value: Union[torch.Tensor, np.ndarray], repeats: int) -> Union[torch.Tensor, List[Any]]:
+def _repeat_interleave(
+    value: Union[torch.Tensor, np.ndarray], repeats: int
+) -> Union[torch.Tensor, List[Any]]:
     if isinstance(value, torch.Tensor):
         return value.repeat_interleave(repeats, dim=0)
     else:
@@ -71,7 +75,9 @@ def _repeat_interleave(value: Union[torch.Tensor, np.ndarray], repeats: int) -> 
 
 
 class vLLMRollout(BaseRollout):
-    def __init__(self, model_path: str, config: DictConfig, tokenizer, model_hf_config, **kwargs):
+    def __init__(
+        self, model_path: str, config: DictConfig, tokenizer, model_hf_config, **kwargs
+    ):
         """A vLLM rollout. It requires the module is supported by the vllm.
 
         Args:
@@ -83,14 +89,14 @@ class vLLMRollout(BaseRollout):
         """
         super().__init__()
         self.config = config
-        assert not (not config.enforce_eager and config.free_cache_engine), (
-            "disable CUDA graph (enforce_eager = False) if free cache engine"
-        )
+        assert not (
+            not config.enforce_eager and config.free_cache_engine
+        ), "disable CUDA graph (enforce_eager = False) if free cache engine"
 
         tensor_parallel_size = self.config.get("tensor_model_parallel_size", 1)
-        assert tensor_parallel_size <= torch.distributed.get_world_size(), (
-            "tensor parallel size should be less than or equal to the world size"
-        )
+        assert (
+            tensor_parallel_size <= torch.distributed.get_world_size()
+        ), "tensor parallel size should be less than or equal to the world size"
         max_num_batched_tokens = self.config.get("max_num_batched_tokens", 8192)
 
         if kwargs.get("train_tp") is not None:
@@ -106,25 +112,36 @@ class vLLMRollout(BaseRollout):
                 train_tp = kwargs.get("train_tp")
                 num_tp_per_train_tp = train_tp // tensor_parallel_size
                 vllm_ps.initialize_parallel_state(
-                    tensor_model_parallel_size=tensor_parallel_size, num_tp_per_train_tp=num_tp_per_train_tp
+                    tensor_model_parallel_size=tensor_parallel_size,
+                    num_tp_per_train_tp=num_tp_per_train_tp,
                 )
             else:
-                vllm_ps.initialize_model_parallel(tensor_model_parallel_size=tensor_parallel_size)
+                vllm_ps.initialize_model_parallel(
+                    tensor_model_parallel_size=tensor_parallel_size
+                )
 
-        assert model_hf_config.max_position_embeddings >= config.prompt_length + config.response_length, (
-            "model context length should be greater than total sequence length"
+        assert (
+            model_hf_config.max_position_embeddings
+            >= config.prompt_length + config.response_length
+        ), "model context length should be greater than total sequence length"
+
+        max_model_len = int(
+            config.max_model_len or config.prompt_length + config.response_length
         )
 
-        max_model_len = int(config.max_model_len or config.prompt_length + config.response_length)
-
-        if max_num_batched_tokens < max_model_len and self.config.enable_chunked_prefill:
+        if (
+            max_num_batched_tokens < max_model_len
+            and self.config.enable_chunked_prefill
+        ):
             raise ValueError(
                 "Enable chunked prefill, max_num_batched_tokens is smaller than max_model_len, \
                              please increase max_num_batched_tokens or disable chunked prefill"
             )
 
         trust_remote_code = kwargs.get("trust_remote_code", False)
-        load_format = "dummy" if config.load_format.startswith("dummy") else config.load_format
+        load_format = (
+            "dummy" if config.load_format.startswith("dummy") else config.load_format
+        )
 
         limit_mm_per_prompt = None
         if config.get("limit_images", None):  # support for multi-image data
@@ -151,13 +168,17 @@ class vLLMRollout(BaseRollout):
             enable_prefix_caching=True,
             trust_remote_code=trust_remote_code,
             seed=config.get("seed", 0),
-            
-            **({
-                "limit_mm_per_prompt": dict(
-                    image=self.config.agent.max_vllm_images, 
-                    video=self.config.agent.max_vllm_videos,
-                ),
-            } if self.config.agent.activate_agent and self.config.agent.max_vllm_images else {})
+            **(
+                {
+                    "limit_mm_per_prompt": dict(
+                        image=self.config.agent.max_vllm_images,
+                        video=self.config.agent.max_vllm_videos,
+                    ),
+                }
+                if self.config.agent.activate_agent
+                and self.config.agent.max_vllm_images
+                else {}
+            ),
         )
 
         # Offload vllm model to reduce peak memory usage
@@ -227,7 +248,11 @@ class vLLMRollout(BaseRollout):
         non_tensor_batch = prompts.non_tensor_batch
         if "raw_prompt_ids" not in non_tensor_batch:
             non_tensor_batch["raw_prompt_ids"] = np.array(
-                [_pre_process_inputs(self.pad_token_id, idx[i]) for i in range(batch_size)], dtype=object
+                [
+                    _pre_process_inputs(self.pad_token_id, idx[i])
+                    for i in range(batch_size)
+                ],
+                dtype=object,
             )
 
         if batch_size != len(non_tensor_batch["raw_prompt_ids"]):
@@ -236,12 +261,19 @@ class vLLMRollout(BaseRollout):
         if "multi_modal_data" in non_tensor_batch:
             vllm_inputs = []
             for raw_prompt_ids, multi_modal_data in zip(
-                non_tensor_batch.pop("raw_prompt_ids"), non_tensor_batch.pop("multi_modal_data")
+                non_tensor_batch.pop("raw_prompt_ids"),
+                non_tensor_batch.pop("multi_modal_data"),
             ):
-                vllm_inputs.append({"prompt_token_ids": raw_prompt_ids, "multi_modal_data": multi_modal_data})
+                vllm_inputs.append(
+                    {
+                        "prompt_token_ids": raw_prompt_ids,
+                        "multi_modal_data": multi_modal_data,
+                    }
+                )
         else:
             vllm_inputs = [
-                {"prompt_token_ids": raw_prompt_ids} for raw_prompt_ids in non_tensor_batch.pop("raw_prompt_ids")
+                {"prompt_token_ids": raw_prompt_ids}
+                for raw_prompt_ids in non_tensor_batch.pop("raw_prompt_ids")
             ]
 
         # ensure the type of `prompt_token_ids` passed to vllm is list[int]
@@ -280,12 +312,12 @@ class vLLMRollout(BaseRollout):
                 agent_proto = agent_rollout_loop(
                     config=self.config,
                     vllm_engine=self.inference_engine,
-                    vllm_inputs=vllm_inputs, 
+                    vllm_inputs=vllm_inputs,
                     prompts=prompts,
                     multi_modal_inputs=non_tensor_batch.get("multi_modal_inputs", None),
-                    sampling_params=self.sampling_params
+                    sampling_params=self.sampling_params,
                 )
-                response = agent_proto.batch.pop('response')
+                response = agent_proto.batch.pop("response")
             else:
                 outputs = self.inference_engine.generate(
                     prompts=vllm_inputs,  # because we have already convert it to prompt token id
@@ -301,29 +333,38 @@ class vLLMRollout(BaseRollout):
                     for sample_id in range(len(output.outputs)):
                         response.append(output.outputs[sample_id].token_ids)
 
-                response = pad_2d_list_to_length(response, self.pad_token_id, max_length=self.config.response_length).to(
-                    idx.device
-                )
+                response = pad_2d_list_to_length(
+                    response, self.pad_token_id, max_length=self.config.response_length
+                ).to(idx.device)
 
             if self.sampling_params.n > 1 and do_sample:
                 idx = _repeat_interleave(idx, self.sampling_params.n)
-                attention_mask = _repeat_interleave(attention_mask, self.sampling_params.n)
+                attention_mask = _repeat_interleave(
+                    attention_mask, self.sampling_params.n
+                )
                 position_ids = _repeat_interleave(position_ids, self.sampling_params.n)
+
                 batch_size = batch_size * self.sampling_params.n
                 # if "multi_modal_inputs" in non_tensor_batch.keys():
                 #     non_tensor_batch["multi_modal_inputs"] = _repeat_interleave(
                 #         non_tensor_batch["multi_modal_inputs"], self.sampling_params.n
                 #     )
                 for key, value in non_tensor_batch.items():
-                    non_tensor_batch[key] = _repeat_interleave(value, self.sampling_params.n)
+                    non_tensor_batch[key] = _repeat_interleave(
+                        value, self.sampling_params.n
+                    )
 
             seq = torch.cat([idx, response], dim=-1)
 
         response_length = response.size(1)
-        delta_position_id = torch.arange(1, response_length + 1, device=position_ids.device)
+        delta_position_id = torch.arange(
+            1, response_length + 1, device=position_ids.device
+        )
         delta_position_id = delta_position_id.unsqueeze(0).expand(batch_size, -1)
-        if position_ids.dim() == 3:  # qwen2vl mrope
-            delta_position_id = delta_position_id.view(batch_size, 1, -1).expand(batch_size, 3, -1)
+        if position_ids.dim() == 3:  # qwen2vl mrope (batch size, 4, seq len)
+            delta_position_id = delta_position_id.view(batch_size, 1, -1).expand(
+                batch_size, position_ids.size(1), -1
+            )
 
         # TODO(sgm): fix position_ids on right_pad
         # prompt: left pad + response: right pad
@@ -349,12 +390,12 @@ class vLLMRollout(BaseRollout):
             batch_size=batch_size,
         )
 
-        if 'raw_prompt' in non_tensor_batch.keys():
-            non_tensor_batch.pop('raw_prompt')
-        if 'multi_modal_data' in non_tensor_batch.keys():
-            non_tensor_batch.pop('multi_modal_data')
-        if 'origin_multi_modal_data' in non_tensor_batch.keys():
-            non_tensor_batch.pop('origin_multi_modal_data', None)
+        if "raw_prompt" in non_tensor_batch.keys():
+            non_tensor_batch.pop("raw_prompt")
+        if "multi_modal_data" in non_tensor_batch.keys():
+            non_tensor_batch.pop("multi_modal_data")
+        if "origin_multi_modal_data" in non_tensor_batch.keys():
+            non_tensor_batch.pop("origin_multi_modal_data", None)
 
         if self.config.agent.activate_agent:
             batch = batch.update(agent_proto.batch)
@@ -362,7 +403,9 @@ class vLLMRollout(BaseRollout):
             tool_name_key = self.config.agent.tool_name_key
             if tool_name_key and tool_name_key in non_tensor_batch.keys():
                 non_tensor_batch.pop(tool_name_key)
-            print(f' [DEBUG agent output proto] {batch.keys()=}, {non_tensor_batch.keys()=}')
+            print(
+                f" [DEBUG agent output proto] {batch.keys()=}, {non_tensor_batch.keys()=}"
+            )
 
         # free vllm cache engine
         if (

@@ -709,6 +709,23 @@ class DataProto:
             non_tensor_batch=repeated_non_tensor_batch,
             meta_info=self.meta_info,
         )
+    
+    def pretty_print(self):
+        print(f"DataProto:")
+        for tensor_key in self.batch.keys():
+            print(f"- {tensor_key}: {self.batch[tensor_key].shape}")
+        for non_tensor_key in self.non_tensor_batch.keys():
+            item = self.non_tensor_batch[non_tensor_key]
+            if isinstance(item, np.ndarray):
+                print(f"- {non_tensor_key}: Array {item.shape}")
+            elif isinstance(item, list):
+                print(f"- {non_tensor_key}: List {len(item)}")
+            elif isinstance(item, dict):
+                print(f"- {non_tensor_key}: Dict {item.keys()}")
+            else:
+                print(f"- {non_tensor_key}: Unknown type {type(item)}")
+
+
 
 
 import ray
