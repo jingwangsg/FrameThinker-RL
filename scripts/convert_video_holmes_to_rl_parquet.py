@@ -11,14 +11,14 @@ import json
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Any
 import io
+import os
 
 import decord
 import numpy as np
-import pandas as pd
+from datasets import load_dataset, Dataset
 from PIL import Image
-from tqdm import tqdm
 
 # Set decord to use native bridge
 decord.bridge.set_bridge('native')
@@ -133,111 +133,101 @@ def build_prompt(question: str, frame_indices: List[int]) -> List[Dict]:
     ]
 
 
-def convert_json_to_rl_format(
-    json_path: str,
+def process_single_sample(
+    example: Dict[str, Any],
+    idx: int,
     video_dir: str,
     num_frames: int = 8
-) -> pd.DataFrame:
+) -> Dict[str, Any]:
     """
-    Convert Video-Holmes JSON to RL parquet format.
+    Process a single sample for datasets.map().
 
     Args:
-        json_path: Path to input JSON file
+        example: Single sample from dataset
+        idx: Sample index
         video_dir: Directory containing video files
         num_frames: Number of initial frames to extract
 
     Returns:
-        DataFrame with RL format
+        Processed sample in RL format, or None if processing failed
     """
-    # Load JSON data
-    print(f"Loading JSON from: {json_path}")
-    with open(json_path, 'r') as f:
-        data = json.load(f)
+    try:
+        # Get video path (could be relative or absolute)
+        video_rel_path = example['video_path']
+        if video_rel_path.startswith('Video-Holmes/videos/'):
+            # Extract just the filename
+            video_filename = video_rel_path.split('/')[-1]
+            video_path = str(Path(video_dir) / video_filename)
+        elif video_rel_path.startswith('Video-Holmes/'):
+            # Remove Video-Holmes/ prefix
+            remaining_path = video_rel_path.replace('Video-Holmes/', '')
+            video_path = str(Path(video_dir).parent / remaining_path)
+        else:
+            video_path = str(Path(video_dir) / video_rel_path)
 
-    print(f"Found {len(data)} samples")
+        # Check if video exists
+        if not Path(video_path).exists():
+            print(f"\nWarning: Video not found: {video_path}")
+            return None
 
-    # Process each sample
-    rl_data = []
-    for idx, item in enumerate(tqdm(data, desc="Processing samples")):
-        try:
-            # Get video path (could be relative or absolute)
-            video_rel_path = item['video_path']
-            if video_rel_path.startswith('Video-Holmes/videos/'):
-                # Extract just the filename
-                video_filename = video_rel_path.split('/')[-1]
-                video_path = str(Path(video_dir) / video_filename)
-            elif video_rel_path.startswith('Video-Holmes/'):
-                # Remove Video-Holmes/ prefix
-                remaining_path = video_rel_path.replace('Video-Holmes/', '')
-                video_path = str(Path(video_dir).parent / remaining_path)
-            else:
-                video_path = str(Path(video_dir) / video_rel_path)
+        # Get video metadata
+        video_meta = get_video_metadata(video_path)
 
-            # Check if video exists
-            if not Path(video_path).exists():
-                print(f"\nWarning: Video not found: {video_path}")
-                continue
+        # Extract frames
+        frames, frame_indices = extract_frames(video_path, num_frames=num_frames)
 
-            # Get video metadata
-            video_meta = get_video_metadata(video_path)
+        # Build prompt with actual frame indices
+        question = example['question']
+        prompt = build_prompt(question, frame_indices=frame_indices)
 
-            # Extract frames
-            frames, frame_indices = extract_frames(video_path, num_frames=num_frames)
+        # Get ground truth
+        ground_truth = example['answer']
 
-            # Build prompt with actual frame indices
-            question = item['question']
-            prompt = build_prompt(question, frame_indices=frame_indices)
+        # Build extra_info
+        extra_info = {
+            'fps': video_meta['fps'],
+            'height': video_meta['height'],
+            'width': video_meta['width'],
+            'total_frames': video_meta['total_frames'],
+            'video_path': video_path,
+            'answer': ground_truth,
+            'question': question,
+            'split': example.get('metadata', {}).get('split', 'train'),
+            'index': idx
+        }
 
-            # Get ground truth
-            ground_truth = item['answer']
+        # Add optional fields if present
+        if 'thinking' in example:
+            extra_info['thinking'] = example['thinking']
+        if 'explanation' in example.get('metadata', {}):
+            extra_info['explanation'] = example['metadata']['explanation']
 
-            # Build RL format sample
-            rl_sample = {
-                'data_source': 'TencentARC/Video-Holmes',  # or 'vstar' to match official
-                'prompt': prompt,
-                'images': np.array(frames, dtype=object),
-                'ability': 'vl_video_reasoning',
-                'env_name': 'think_with_video',
-                'reward_model': {
-                    'ground_truth': ground_truth,
-                    'style': 'rule'
-                },
+        # Build RL format sample
+        return {
+            'data_source': 'TencentARC/Video-Holmes',
+            'prompt': prompt,
+            'images': frames,  # datasets will handle numpy array
+            'ability': 'vl_video_reasoning',
+            'env_name': 'think_with_video',
+            'reward_model': {
                 'ground_truth': ground_truth,
-                'question_type': item.get('question_type', 'mcq'),
-                'video_path': video_path,
-                'metadata': item.get('metadata', {}),
-                'extra_info': {
-                    'fps': video_meta['fps'],
-                    'height': video_meta['height'],
-                    'width': video_meta['width'],
-                    'total_frames': video_meta['total_frames'],
-                    'video_path': video_path,
-                    'answer': ground_truth,
-                    'question': question,
-                    'split': item['metadata'].get('split', 'train'),
-                    'index': idx
-                }
-            }
+                'style': 'rule'
+            },
+            'ground_truth': ground_truth,
+            'question_type': example.get('question_type', 'mcq'),
+            'video_path': video_path,
+            'metadata': example.get('metadata', {}),
+            'extra_info': extra_info
+        }
 
-            # Add optional fields if present
-            if 'thinking' in item:
-                rl_sample['extra_info']['thinking'] = item['thinking']
-            if 'explanation' in item['metadata']:
-                rl_sample['extra_info']['explanation'] = item['metadata']['explanation']
-
-            rl_data.append(rl_sample)
-
-        except Exception as e:
-            print(f"\nError processing sample {idx}: {e}")
-            continue
-
-    print(f"\nSuccessfully processed {len(rl_data)} samples")
-    return pd.DataFrame(rl_data)
+    except Exception as e:
+        print(f"\nError processing sample {idx}: {e}")
+        return None
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Convert Video-Holmes JSON to RL parquet format"
+        description="Convert Video-Holmes JSON to RL parquet format (using datasets with multiprocessing)"
     )
     parser.add_argument(
         "json_file",
@@ -262,6 +252,12 @@ def main():
         default=8,
         help="Number of initial frames to extract (default: 8)"
     )
+    parser.add_argument(
+        "--num-proc",
+        type=int,
+        default=None,
+        help="Number of processes for parallel processing (default: number of CPU cores)"
+    )
 
     args = parser.parse_args()
 
@@ -271,16 +267,50 @@ def main():
     else:
         output_path = Path(args.output)
 
-    # Convert JSON to RL format
-    df = convert_json_to_rl_format(
-        json_path=args.json_file,
-        video_dir=args.video_dir,
-        num_frames=args.num_frames
+    # Determine number of processes
+    num_proc = args.num_proc if args.num_proc is not None else os.cpu_count()
+    print(f"Using {num_proc} processes for parallel processing")
+
+    # Load dataset using datasets library
+    print(f"Loading JSON from: {args.json_file}")
+    dataset = load_dataset('json', data_files=args.json_file, split='train')
+    print(f"Found {len(dataset)} samples")
+
+    # Process dataset using map with multiprocessing
+    print(f"Processing samples with {num_proc} processes...")
+
+    def process_wrapper(example, idx):
+        """Wrapper function for datasets.map()"""
+        result = process_single_sample(
+            example=example,
+            idx=idx,
+            video_dir=args.video_dir,
+            num_frames=args.num_frames
+        )
+        # Return empty dict if processing failed (will be filtered out)
+        if result is None:
+            return {'_skip': True}
+        return result
+
+    processed_dataset = dataset.map(
+        process_wrapper,
+        with_indices=True,
+        num_proc=num_proc,
+        desc="Processing samples"
     )
 
+    # Filter out failed samples
+    if '_skip' in processed_dataset.column_names:
+        original_len = len(processed_dataset)
+        processed_dataset = processed_dataset.filter(lambda x: '_skip' not in x or not x['_skip'])
+        processed_dataset = processed_dataset.remove_columns(['_skip'])
+        print(f"Filtered out {original_len - len(processed_dataset)} failed samples")
+
+    print(f"\nSuccessfully processed {len(processed_dataset)} samples")
+
     # Save to parquet
-    print(f"\nSaving to: {output_path}")
-    df.to_parquet(output_path, index=False)
+    print(f"Saving to: {output_path}")
+    processed_dataset.to_parquet(output_path)
     print("Done!")
 
 

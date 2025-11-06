@@ -1,12 +1,12 @@
 set -x
 
-BASE_DATA_DIR=/mnt/aws-lfs-01/shared/datasets/s3:/video_reason/Video-Holmes
+BASE_DATA_DIR=/mnt/amlfs-03/shared/datasets/s3:/video_reason/Video-Holmes
 PROJECT_NAME=video_holmes_rl
 EXPERIMENT_NAME=framethinker_baseline
-SAVE_CHECKPOINT_DIR=/mnt/aws-lfs-01/shared/checkpoints/jingwang/video_reason/
+SAVE_CHECKPOINT_DIR=/mnt/amlfs-03/shared/checkpoints/jingwang/video_reason/
 REF_MODEL_PATH=Qwen/Qwen2.5-VL-7B-Instruct
-TRAIN_FILES=/mnt/aws-lfs-01/shared/datasets/s3:/video_reason/Video-Holmes/train.parquet
-VAL_FILES=/mnt/aws-lfs-01/shared/datasets/s3:/video_reason/Video-Holmes/test.parquet
+TRAIN_FILES=/mnt/amlfs-03/shared/datasets/s3:/video_reason/Video-Holmes/train.parquet
+VAL_FILES=/mnt/amlfs-03/shared/datasets/s3:/video_reason/Video-Holmes/test.parquet
 
 PYTHONUNBUFFERED=1  python3 -m verl.trainer.main_ppo \
     "data.train_files=[${TRAIN_FILES}]" \

@@ -9,13 +9,15 @@ matching the official format from GitHub issue #4.
 import argparse
 import json
 import subprocess
+import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Any
 import io
+import os
 
 import decord
 import numpy as np
-from datasets import load_dataset
+from datasets import load_dataset, Dataset
 from PIL import Image
 
 # Set decord to use native bridge
@@ -23,14 +25,10 @@ decord.bridge.set_bridge('native')
 
 
 SYSTEM_PROMPT = """You are an expert AI assistant that answers questions about a video by iteratively analyzing it.
-For each turn, you MUST do the following
-1. Start by discussing the observed evidence and how it relates to the question.
-2. MUST provide the rationale to take the next action within the <thinking> </thinking> tag
-3. MUST provide the action to take within an <action> </action> tag.
-
+Your task is to output your reasoning within a <think> </think> tag, followed by a specific action within an <action> </action> tag.
 Possible actions are:
-1. `choose frames between START_FRAME and END_FRAME`: Request a more detailed view of a specific video segment. The number of frames is fixed, currently 8. You must choose START_FRAME and END_FRAME from frame indices in the previous turn.
-2. `get frame number at time MM:SS`: Get the exact frame number for a specific time. Convert hours to minutes if needed (e.g., for 1 hour, 2 minutes, and 30 seconds, use 62:30). You must reference MM:SS from the previous turn or given question.
+1. `choose frames between START_FRAME and END_FRAME`: Request a more detailed view of a specific video segment. The number of frames is fixed, currently 8.
+2. `get frame number at time MM:SS`: Get the exact frame number for a specific time. Convert hours to minutes if needed (e.g., for 1 hour, 2 minutes, and 30 seconds, use 62:30).
 3. `output answer: OPTION`: Provide the final answer (e.g., A, B, C...) when you are confident."""
 
 
@@ -135,20 +133,23 @@ def build_prompt(question: str, frame_indices: List[int]) -> List[Dict]:
     ]
 
 
-def process_sample(example: Dict, idx: int, video_dir: str, num_frames: int = 8) -> Dict:
+def process_single_sample(
+    example: Dict[str, Any],
+    idx: int,
+    video_dir: str,
+    num_frames: int = 8
+) -> Dict[str, Any]:
     """
-    Process a single sample from Video-Holmes JSON to RL format.
-
-    This function is designed to work with datasets.map() for parallel processing.
+    Process a single sample for datasets.map().
 
     Args:
-        example: Single sample dict from JSON
+        example: Single sample from dataset
         idx: Sample index
         video_dir: Directory containing video files
         num_frames: Number of initial frames to extract
 
     Returns:
-        Dict with RL format and '_success' flag indicating processing status
+        Processed sample in RL format, or None if processing failed
     """
     try:
         # Get video path (could be relative or absolute)
@@ -166,8 +167,8 @@ def process_sample(example: Dict, idx: int, video_dir: str, num_frames: int = 8)
 
         # Check if video exists
         if not Path(video_path).exists():
-            print(f"Warning: Video not found: {video_path}")
-            return {'_success': False}
+            print(f"\nWarning: Video not found: {video_path}")
+            return None
 
         # Get video metadata
         video_meta = get_video_metadata(video_path)
@@ -182,12 +183,30 @@ def process_sample(example: Dict, idx: int, video_dir: str, num_frames: int = 8)
         # Get ground truth
         ground_truth = example['answer']
 
+        # Build extra_info
+        extra_info = {
+            'fps': video_meta['fps'],
+            'height': video_meta['height'],
+            'width': video_meta['width'],
+            'total_frames': video_meta['total_frames'],
+            'video_path': video_path,
+            'answer': ground_truth,
+            'question': question,
+            'split': example.get('metadata', {}).get('split', 'train'),
+            'index': idx
+        }
+
+        # Add optional fields if present
+        if 'thinking' in example:
+            extra_info['thinking'] = example['thinking']
+        if 'explanation' in example.get('metadata', {}):
+            extra_info['explanation'] = example['metadata']['explanation']
+
         # Build RL format sample
-        rl_sample = {
-            "agent_name": "action_agent",
+        return {
             'data_source': 'TencentARC/Video-Holmes',
             'prompt': prompt,
-            'images': frames,  # datasets will handle the list of dicts
+            'images': frames,  # datasets will handle numpy array
             'ability': 'vl_video_reasoning',
             'env_name': 'think_with_video',
             'reward_model': {
@@ -198,36 +217,17 @@ def process_sample(example: Dict, idx: int, video_dir: str, num_frames: int = 8)
             'question_type': example.get('question_type', 'mcq'),
             'video_path': video_path,
             'metadata': example.get('metadata', {}),
-            'extra_info': {
-                'fps': video_meta['fps'],
-                'height': video_meta['height'],
-                'width': video_meta['width'],
-                'total_frames': video_meta['total_frames'],
-                'video_path': video_path,
-                'answer': ground_truth,
-                'question': question,
-                'split': example.get('metadata', {}).get('split', 'train'),
-                'index': idx
-            },
-            '_success': True  # Mark as successfully processed
+            'extra_info': extra_info
         }
 
-        # Add optional fields if present
-        if 'thinking' in example:
-            rl_sample['extra_info']['thinking'] = example['thinking']
-        if 'explanation' in example.get('metadata', {}):
-            rl_sample['extra_info']['explanation'] = example['metadata']['explanation']
-
-        return rl_sample
-
     except Exception as e:
-        print(f"Error processing sample {idx}: {e}")
-        return {'_success': False}
+        print(f"\nError processing sample {idx}: {e}")
+        return None
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Convert Video-Holmes JSON to RL parquet format using datasets library with multiprocessing"
+        description="Convert Video-Holmes JSON to RL parquet format (using datasets with multiprocessing)"
     )
     parser.add_argument(
         "json_file",
@@ -255,54 +255,58 @@ def main():
     parser.add_argument(
         "--num-proc",
         type=int,
-        default=1,
-        help="Number of processes for parallel processing (default: 1)"
+        default=None,
+        help="Number of processes for parallel processing (default: number of CPU cores)"
     )
 
     args = parser.parse_args()
 
     # Determine output path
     if args.output is None:
-        output_path = str(Path(args.json_file).with_suffix('.parquet'))
+        output_path = Path(args.json_file).with_suffix('.parquet')
     else:
-        output_path = str(args.output)
+        output_path = Path(args.output)
 
-    # Load JSON dataset
+    # Determine number of processes
+    num_proc = args.num_proc if args.num_proc is not None else os.cpu_count()
+    print(f"Using {num_proc} processes for parallel processing")
+
+    # Load dataset using datasets library
     print(f"Loading JSON from: {args.json_file}")
-    dataset = load_dataset("json", data_files=args.json_file, split="train")
-    print(f"Loaded {len(dataset)} samples")
+    dataset = load_dataset('json', data_files=args.json_file, split='train')
+    print(f"Found {len(dataset)} samples")
 
-    # Process samples with multiprocessing
-    print(f"Processing samples with {args.num_proc} processes...")
+    # Process dataset using map with multiprocessing
+    print(f"Processing samples with {num_proc} processes...")
 
-    def map_fn(example, idx):
-        """Wrapper function for dataset.map()"""
-        return process_sample(
+    def process_wrapper(example, idx):
+        """Wrapper function for datasets.map()"""
+        result = process_single_sample(
             example=example,
             idx=idx,
             video_dir=args.video_dir,
             num_frames=args.num_frames
         )
+        # Return empty dict if processing failed (will be filtered out)
+        if result is None:
+            return {'_skip': True}
+        return result
 
-    # Apply processing with multiprocessing
     processed_dataset = dataset.map(
-        map_fn,
+        process_wrapper,
         with_indices=True,
-        num_proc=args.num_proc,
-        desc="Processing samples",
-        remove_columns=dataset.column_names  # Remove original columns
+        num_proc=num_proc,
+        desc="Processing samples"
     )
 
     # Filter out failed samples
-    processed_dataset = processed_dataset.filter(
-        lambda x: x.get('_success', False),
-        desc="Filtering failed samples"
-    )
+    if '_skip' in processed_dataset.column_names:
+        original_len = len(processed_dataset)
+        processed_dataset = processed_dataset.filter(lambda x: '_skip' not in x or not x['_skip'])
+        processed_dataset = processed_dataset.remove_columns(['_skip'])
+        print(f"Filtered out {original_len - len(processed_dataset)} failed samples")
 
-    print(f"Successfully processed {len(processed_dataset)} samples")
-
-    # Remove the _success flag before saving
-    processed_dataset = processed_dataset.remove_columns(['_success'])
+    print(f"\nSuccessfully processed {len(processed_dataset)} samples")
 
     # Save to parquet
     print(f"Saving to: {output_path}")
