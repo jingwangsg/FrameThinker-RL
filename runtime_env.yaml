@@ -1,12 +1,12 @@
 env_vars:
-  PATH: /mnt/aws-lfs-01/shared/jingwang/PROJECTS/video_reason/pubs/FrameThinker-RL/.venv/bin/:$PATH
+  PATH: /mnt/amlfs-03/shared/jingwang/PROJECTS/video_reason/framethinker/FrameThinker-RL/.venv/bin/:$PATH
   VERL_LOGGING_LEVEL: DEBUG
   RAY_ENABLE_RECORD_ACTOR_TASK_LOGGING: "1"
   TRITON_CACHE_DIR: /tmp/.triton/cache/
   RAY_DEBUG: "legacy"
   CUDA_LAUNCH_BLOCKING: "1"
-py_executable: /mnt/aws-lfs-01/shared/jingwang/PROJECTS/video_reason/pubs/FrameThinker-RL/.venv/bin/python
-working_dir: /mnt/aws-lfs-01/shared/jingwang/PROJECTS/video_reason/pubs/FrameThinker-RL/
+py_executable: /mnt/amlfs-03/shared/jingwang/PROJECTS/video_reason/framethinker/FrameThinker-RL/.venv/bin/python
+working_dir: /mnt/amlfs-03/shared/jingwang/PROJECTS/video_reason/framethinker/FrameThinker-RL/
 excludes:
   - .git/
   - .venv/
