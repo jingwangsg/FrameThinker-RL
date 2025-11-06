@@ -1,14 +1,29 @@
-set -x
+#!/bin/bash
+# run on 8xH100
+# make sure your current working directory is the root of the project
+wandb login --api-key api_key
 
-BASE_DATA_DIR=/mnt/amlfs-03/shared/datasets/s3:/video_reason/Video-Holmes
+set -x
+ulimit -n 65535
+
+echo "Environment Variables:"
+echo "  MASTER_ADDR: $MASTER_ADDR"
+echo "  MASTER_PORT: $MASTER_PORT"
+echo "  WORLD_SIZE: $WORLD_SIZE"
+echo "  RANK: $RANK"
+echo "  NPROC_PER_NODE: $NPROC_PER_NODE"
+
+PROJECT_DIR="$(pwd)"
+
+BASE_DATA_DIR=$PROJECT_DIR/video_reason/Video-Holmes
 PROJECT_NAME=video_holmes_rl
 EXPERIMENT_NAME=framethinker_baseline
-SAVE_CHECKPOINT_DIR=/mnt/amlfs-03/shared/checkpoints/jingwang/video_reason/
-REF_MODEL_PATH=Qwen/Qwen2.5-VL-7B-Instruct
-TRAIN_FILES=/mnt/amlfs-03/shared/datasets/s3:/video_reason/Video-Holmes/train.parquet
-VAL_FILES=/mnt/amlfs-03/shared/datasets/s3:/video_reason/Video-Holmes/test.parquet
+SAVE_CHECKPOINT_DIR=$PROJECT_DIR/ckpt/video_reason/
+REF_MODEL_PATH=$PROJECT_DIR/model_weights/Qwen2.5-VL-7B-Instruct
+TRAIN_FILES=$PROJECT_DIR/video_reason/Video-Holmes/train.parquet
+VAL_FILES=$PROJECT_DIR/video_reason/Video-Holmes/test.parquet
 
-PYTHONUNBUFFERED=1  python3 -m verl.trainer.main_ppo \
+python3 -m verl.trainer.main_ppo \
     "data.train_files=[${TRAIN_FILES}]" \
     "data.val_files=[${VAL_FILES}]" \
     data.train_batch_size=32 \
@@ -50,15 +65,15 @@ PYTHONUNBUFFERED=1  python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.agent.show_tqdm=True \
     actor_rollout_ref.rollout.agent.max_vllm_images=128 \
     trainer.critic_warmup=0 \
-    trainer.logger=['console','wandb'] \
-    trainer.n_gpus_per_node=4 \
-    trainer.nnodes=2 \
+    trainer.logger=['console','wandb','tensorboard'] \
+    trainer.n_gpus_per_node=8 \
+    trainer.nnodes=1 \
     trainer.save_freq=50 \
     trainer.val_before_train=False \
     trainer.test_freq=-1 \
     trainer.project_name=${PROJECT_NAME} \
     trainer.experiment_name=${EXPERIMENT_NAME} \
     trainer.default_local_dir=${SAVE_CHECKPOINT_DIR}/${PROJECT_NAME}/${EXPERIMENT_NAME} \
-    +trainer.tensorboard_dir=${SAVE_CHECKPOINT_DIR}/logs/tensorboard \
-    +trainer.rl_logging_board_dir=${SAVE_CHECKPOINT_DIR}/logs/rl_logging_board \
-    trainer.total_epochs=10 \
+    +trainer.tensorboard_dir=${SAVE_CHECKPOINT_DIR}/${PROJECT_NAME}/${EXPERIMENT_NAME}/logs/tensorboard \
+    +trainer.rl_logging_board_dir=${SAVE_CHECKPOINT_DIR}/${PROJECT_NAME}/${EXPERIMENT_NAME}/logs/rl_logging_board \
+    trainer.total_epochs=10 $@
