@@ -71,7 +71,7 @@ def get_video_metadata(video_path: str) -> Dict[str, any]:
         raise
 
 
-def extract_frames(video_path: str, num_frames: int = 8) -> List[Dict]:
+def extract_frames(video_path: str, num_frames: int = 8) -> tuple[List[Dict], List[int]]:
     """
     Extract evenly-spaced frames from video using decord.
 
@@ -80,14 +80,16 @@ def extract_frames(video_path: str, num_frames: int = 8) -> List[Dict]:
         num_frames: Number of frames to extract (default: 8)
 
     Returns:
-        List of dicts with 'bytes' and 'path' keys
+        Tuple of (frames, frame_indices)
+        - frames: List of dicts with 'bytes' and 'path' keys
+        - frame_indices: List of actual frame indices extracted
     """
     # Open video with decord
     vr = decord.VideoReader(video_path, ctx=decord.cpu(0))
     total_frames = len(vr)
 
     # Calculate frame indices (evenly spaced, excluding last frame)
-    frame_indices = np.linspace(0, total_frames - 1, num_frames, dtype=int)
+    frame_indices = np.linspace(0, total_frames - 1, num_frames, dtype=int).tolist()
 
     frames = []
     for idx in frame_indices:
@@ -107,22 +109,22 @@ def extract_frames(video_path: str, num_frames: int = 8) -> List[Dict]:
             'path': None
         })
 
-    return frames
+    return frames, frame_indices
 
 
-def build_prompt(question: str, num_frames: int = 8) -> List[Dict]:
+def build_prompt(question: str, frame_indices: List[int]) -> List[Dict]:
     """
     Build prompt with system message and user message with frame placeholders.
 
     Args:
         question: Question text
-        num_frames: Number of frames (default: 8)
+        frame_indices: List of actual frame indices to display
 
     Returns:
         List of message dicts
     """
-    # Build user content with frame placeholders
-    frame_placeholders = "\n".join([f"frame {i}:<image>" for i in range(num_frames)])
+    # Build user content with actual frame indices
+    frame_placeholders = "\n".join([f"frame {idx}:<image>" for idx in frame_indices])
     user_content = f"{frame_placeholders}\n{question}"
 
     return [
@@ -180,11 +182,11 @@ def convert_json_to_rl_format(
             video_meta = get_video_metadata(video_path)
 
             # Extract frames
-            frames = extract_frames(video_path, num_frames=num_frames)
+            frames, frame_indices = extract_frames(video_path, num_frames=num_frames)
 
-            # Build prompt
+            # Build prompt with actual frame indices
             question = item['question']
-            prompt = build_prompt(question, num_frames=num_frames)
+            prompt = build_prompt(question, frame_indices=frame_indices)
 
             # Get ground truth
             ground_truth = item['answer']
