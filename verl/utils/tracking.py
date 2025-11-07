@@ -226,9 +226,9 @@ class ValidationGenerationsLogger:
         """Log samples to wandb as a table"""
         import wandb
 
-        # Create column names for all samples
+        # Create column names for all samples with separate accuracy and format columns
         columns = ["step"] + sum(
-            [[f"input_{i + 1}", f"output_{i + 1}", f"score_{i + 1}"] for i in range(len(samples))], []
+            [[f"input_{i + 1}", f"output_{i + 1}", f"accuracy_{i + 1}", f"format_{i + 1}"] for i in range(len(samples))], []
         )
 
         if not hasattr(self, "validation_table"):
@@ -259,14 +259,18 @@ class ValidationGenerationsLogger:
         for i, sample in enumerate(samples):
             row_text = f"""
             input: {sample[0]}
-            
+
             ---
-            
+
             output: {sample[1]}
-            
+
             ---
-            
-            score: {sample[2]}
+
+            accuracy: {sample[2]}
+
+            ---
+
+            format: {sample[3]}
             """
             swanlab_text_list.append(swanlab.Text(row_text, caption=f"sample {i + 1}"))
 
@@ -287,7 +291,12 @@ class ValidationGenerationsLogger:
                 validation_gen_step_file = Path(tmp_dir, f"val_step{step}.json")
                 row_data = []
                 for sample in samples:
-                    data = {"input": sample[0], "output": sample[1], "score": sample[2]}
+                    data = {
+                        "input": sample[0],
+                        "output": sample[1],
+                        "accuracy": sample[2],
+                        "format": sample[3]
+                    }
                     row_data.append(data)
                 with open(validation_gen_step_file, "w") as file:
                     json.dump(row_data, file)

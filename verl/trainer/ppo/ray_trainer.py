@@ -618,7 +618,7 @@ class RayPPOTrainer:
             )
             self.config.critic.optim.total_training_steps = total_training_steps
 
-    def _maybe_log_val_generations(self, inputs, outputs, scores):
+    def _maybe_log_val_generations(self, inputs, outputs, acc_scores, fmt_scores):
         """Log a table of validation samples to the configured logger (wandb or swanlab)"""
 
         generations_to_log = self.config.trainer.log_val_generations
@@ -628,8 +628,8 @@ class RayPPOTrainer:
 
         import numpy as np
 
-        # Create tuples of (input, output, score) and sort by input text
-        samples = list(zip(inputs, outputs, scores))
+        # Create tuples of (input, output, acc_score, fmt_score) and sort by input text
+        samples = list(zip(inputs, outputs, acc_scores, fmt_scores))
         samples.sort(key=lambda x: x[0])  # Sort by input text
 
         # Use fixed random seed for deterministic shuffling
@@ -651,7 +651,8 @@ class RayPPOTrainer:
         # Lists to collect samples for the table
         sample_inputs = []
         sample_outputs = []
-        sample_scores = []
+        sample_acc_scores = []
+        sample_fmt_scores = []
 
         for test_data in self.val_dataloader:
             test_batch = DataProto.from_single_dict(test_data)
@@ -752,23 +753,32 @@ class RayPPOTrainer:
             test_batch = test_batch.union(test_output_gen_batch)
 
             # evaluate using reward_function
-            result = self.val_reward_fn(test_batch, return_dict=True)
-            # print("result:",list(result.keys()))
-            reward_tensor = result[
-                "acc_tensor"
-            ]  # --------------------------------------------------------
-            scores = reward_tensor.sum(-1).cpu().tolist()
+            try:
+                result = self.val_reward_fn(test_batch, return_dict=True)
+                # print("result:",list(result.keys()))
 
-            format_tensor = result["format_tensor"]
-            other_tensor = result["other_tensor"]
-            sum_tensor = result["reward_tensor"]
+                # Extract different score components
+                acc_tensor = result["acc_tensor"]
+                format_tensor = result["format_tensor"]
+                other_tensor = result["other_tensor"]
+                sum_tensor = result["reward_tensor"]
+            except (KeyError, TypeError) as e:
+                print(f"Error in val_reward_fn with return_dict=True: {e}")
+                print("Falling back to tuple unpacking...")
+                sum_tensor, acc_tensor, format_tensor, other_tensor = self.val_reward_fn(test_batch)
+                result = {}
+
+            acc_scores = acc_tensor.sum(-1).cpu().tolist()
             format_scores = format_tensor.sum(-1).cpu().tolist()
             other_scores = other_tensor.sum(-1).cpu().tolist()
             sum_scores = sum_tensor.sum(-1).cpu().tolist()
 
-            sample_scores.extend(scores)
+            # Store scores separately for wandb table logging
+            sample_acc_scores.extend(acc_scores)
+            sample_fmt_scores.extend(format_scores)
 
-            reward_extra_infos_dict["reward"].extend(scores)
+            # Store scores in infos dict with clear names
+            reward_extra_infos_dict["accuracy"].extend(acc_scores)
             reward_extra_infos_dict["format"].extend(format_scores)
             reward_extra_infos_dict["other"].extend(other_scores)
             reward_extra_infos_dict["sum"].extend(sum_scores)
@@ -779,18 +789,21 @@ class RayPPOTrainer:
 
             data_source_lst.append(
                 test_batch.non_tensor_batch.get(
-                    "data_source", ["unknown"] * reward_tensor.shape[0]
+                    "data_source", ["unknown"] * acc_tensor.shape[0]
                 )
             )
 
         self._maybe_log_val_generations(
-            inputs=sample_inputs, outputs=sample_outputs, scores=sample_scores
+            inputs=sample_inputs,
+            outputs=sample_outputs,
+            acc_scores=sample_acc_scores,
+            fmt_scores=sample_fmt_scores
         )
 
         for key_info, lst in reward_extra_infos_dict.items():
             assert len(lst) == 0 or len(lst) == len(
-                sample_scores
-            ), f"{key_info}: {len(lst)=}, {len(sample_scores)=}"
+                sample_acc_scores
+            ), f"{key_info}: {len(lst)=}, {len(sample_acc_scores)=}"
 
         data_sources = np.concatenate(data_source_lst, axis=0)
 
@@ -800,7 +813,8 @@ class RayPPOTrainer:
         metric_dict = {}
         for data_source, var2metric2val in data_src2var2metric2val.items():
             # print("var2metric2val",list(var2metric2val.keys()))
-            core_var = "acc" if "acc" in var2metric2val else "reward"
+            # Treat both accuracy and format as core variables
+            core_vars = {"accuracy", "format"}
             for var_name, metric2val in var2metric2val.items():
                 n_max = max(
                     [
@@ -810,7 +824,7 @@ class RayPPOTrainer:
                 )
                 for metric_name, metric_val in metric2val.items():
                     if (
-                        (var_name == core_var)
+                        (var_name in core_vars)
                         and any(
                             metric_name.startswith(pfx)
                             for pfx in ["mean", "maj", "best"]
