@@ -1,7 +1,7 @@
 #!/bin/bash
 # run on 8xH100
 # make sure your current working directory is the root of the project
-wandb login --api-key api_key
+swanlab login --api-key <api_key>
 
 set -x
 ulimit -n 65535
@@ -15,13 +15,13 @@ echo "  NPROC_PER_NODE: $NPROC_PER_NODE"
 
 PROJECT_DIR="$(pwd)"
 
-BASE_DATA_DIR=$PROJECT_DIR/video_reason/Video-Holmes
+BASE_DATA_DIR=$PROJECT_DIR/data/video_reason/Video-Holmes
 PROJECT_NAME=video_holmes_rl
 EXPERIMENT_NAME=framethinker_baseline
-SAVE_CHECKPOINT_DIR=$PROJECT_DIR/ckpt/video_reason/
+SAVE_CHECKPOINT_DIR=$PROJECT_DIR/ckpt/video_reason
 REF_MODEL_PATH=$PROJECT_DIR/model_weights/Qwen2.5-VL-7B-Instruct
-TRAIN_FILES=$PROJECT_DIR/video_reason/Video-Holmes/train.parquet
-VAL_FILES=$PROJECT_DIR/video_reason/Video-Holmes/test.parquet
+TRAIN_FILES=$PROJECT_DIR/data/video_reason/Video-Holmes/train.parquet
+VAL_FILES=$PROJECT_DIR/data/video_reason/Video-Holmes/test.parquet
 
 python3 -m verl.trainer.main_ppo \
     "data.train_files=[${TRAIN_FILES}]" \
@@ -65,7 +65,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.agent.show_tqdm=True \
     actor_rollout_ref.rollout.agent.max_vllm_images=128 \
     trainer.critic_warmup=0 \
-    trainer.logger=['console','wandb','tensorboard'] \
+    trainer.logger=['console','swanlab','tensorboard'] \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes=1 \
     trainer.save_freq=50 \
