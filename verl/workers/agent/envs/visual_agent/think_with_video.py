@@ -55,6 +55,7 @@ class ThinkWithVideo(ToolBase):
         time_match = re.match(r'get frame number at time\s+(\S+)', action_block.strip())
         if time_match:
             time_str = time_match.group(1)
+            print(f"get frame number at time {time_str}")
             try:
                 minutes, seconds = map(int, time_str.split(':'))
                 total_seconds = minutes * 60 + seconds
@@ -69,6 +70,7 @@ class ThinkWithVideo(ToolBase):
         zoom_match = re.match(r'zoom in frame\s+(\d+)', action_block.strip())
         if zoom_match:
             frame_idx = int(zoom_match.group(1))
+            print(f"zoom in frame {frame_idx}")
             # Validate frame index
             if frame_idx < 0 or frame_idx >= self.total_frames:
                 return '', 0.0, True, {}
