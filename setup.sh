@@ -11,8 +11,16 @@ uv pip install nvidia-ml-py
 mkdir -p data
 mkdir -p data/video_reason
 if [ ! -d "data/video_reason/Video-Holmes" ]; then
-    huggingface-cli download --resume-download k-nick/video_reason --local-dir data/video_reason/Video-Holmes
+    huggingface-cli download --repo-type dataset --resume-download k-nick/video_reason --local-dir data/video_reason/Video-Holmes
 fi
+
+cp decompress.py data/video_reason/Video-Holmes
+cd data/video_reason/Video-Holmes
+python decompress.py
+cd ../../../
+
+chmod a+x scripts/convert.sh
+./scripts/convert.sh
 
 # download model weights
 mkdir -p model_weights
