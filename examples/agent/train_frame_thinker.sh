@@ -2,28 +2,25 @@ set -x
 
 BASE_DATA_DIR=/mnt/amlfs-03/shared/datasets/s3:/video_reason/Video-Holmes
 PROJECT_NAME=video_holmes_rl
-EXPERIMENT_NAME=framethinker_baseline
+EXP_NAME=${EXP_NAME:-framethinker_baseline}
 SAVE_CHECKPOINT_DIR=/mnt/amlfs-02/shared/checkpoints/jingwang/video_reason/
-REF_MODEL_PATH=Qwen/Qwen2.5-VL-7B-Instruct
-TRAIN_FILES=/mnt/amlfs-03/shared/datasets/s3:/video_reason/Video-Holmes/train.parquet
-VAL_FILES=/mnt/amlfs-03/shared/datasets/s3:/video_reason/Video-Holmes/test.parquet
+MODEL_PATH=${MODEL_PATH:-Qwen/Qwen2.5-VL-7B-Instruct}
+TRAIN_FILES=${TRAIN_FILES:-/mnt/amlfs-03/shared/datasets/s3:/video_reason/Video-Holmes/train_v2.parquet}
+VAL_FILES=${VAL_FILES:-/mnt/amlfs-03/shared/datasets/s3:/video_reason/Video-Holmes/test_v2.parquet}
 
-
-# HPARAMS
-ROLLOUT_N=${ROLLOUT_N:-8}
 
 PYTHONUNBUFFERED=1  python3 -m verl.trainer.main_ppo \
     "data.train_files=[${TRAIN_FILES}]" \
     "data.val_files=[${VAL_FILES}]" \
     data.train_batch_size=32 \
-    data.max_prompt_length=8192 \
-    data.max_response_length=8192 \
+    data.max_prompt_length=16384 \
+    data.max_response_length=16384 \
     data.return_raw_chat=True \
     data.filter_overlong_prompts=False \
     data.dataloader_num_workers=8 \
     algorithm.adv_estimator=grpo \
     algorithm.kl_ctrl.kl_coef=0.0 \
-    actor_rollout_ref.model.path=${REF_MODEL_PATH} \
+    actor_rollout_ref.model.path=${MODEL_PATH} \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.actor.optim.lr=5e-7 \
     actor_rollout_ref.actor.ppo_mini_batch_size=32 \
@@ -36,7 +33,7 @@ PYTHONUNBUFFERED=1  python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=2 \
     actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
     actor_rollout_ref.rollout.name=vllm \
-    actor_rollout_ref.rollout.n=${ROLLOUT_N} \
+    actor_rollout_ref.rollout.n=8 \
     actor_rollout_ref.rollout.max_num_batched_tokens=32768 \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.6 \
     actor_rollout_ref.rollout.enforce_eager=False \
@@ -57,12 +54,12 @@ PYTHONUNBUFFERED=1  python3 -m verl.trainer.main_ppo \
     trainer.logger=['console','wandb'] \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes=1 \
-    trainer.save_freq=50 \
+    trainer.save_freq=20 \
     trainer.val_before_train=False \
-    trainer.test_freq=50 \
+    trainer.test_freq=20 \
     trainer.project_name=${PROJECT_NAME} \
-    trainer.experiment_name=${EXPERIMENT_NAME} \
-    trainer.default_local_dir=${SAVE_CHECKPOINT_DIR}/${PROJECT_NAME}/${EXPERIMENT_NAME} \
+    trainer.experiment_name=${EXP_NAME} \
+    trainer.default_local_dir=${SAVE_CHECKPOINT_DIR}/${PROJECT_NAME}/${EXP_NAME} \
     +trainer.tensorboard_dir=${SAVE_CHECKPOINT_DIR}/logs/tensorboard \
     +trainer.rl_logging_board_dir=${SAVE_CHECKPOINT_DIR}/logs/rl_logging_board \
     trainer.total_epochs=10 \

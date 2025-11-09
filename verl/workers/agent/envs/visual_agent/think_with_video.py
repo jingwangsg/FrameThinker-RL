@@ -36,10 +36,9 @@ class ThinkWithVideo(ToolBase):
         self.fps = None
         self.total_frames = None
         self.vr = None
+        self.vr_highres = None  # High-resolution VideoReader for zoom action
 
         self.num_frames_per_sample = None
-        self.max_width = None
-        self.max_height = None
 
         self.height = 0
         self.width = 0
@@ -64,6 +63,57 @@ class ThinkWithVideo(ToolBase):
                 all_user_msg = self.chat_template.format(message)
                 return all_user_msg, 0.0, False, {}
             except (ValueError, IndexError):
+                return '', 0.0, True, {}
+
+        # Handle "zoom in frame FRAME_INDEX" action
+        zoom_match = re.match(r'zoom in frame\s+(\d+)', action_block.strip())
+        if zoom_match:
+            frame_idx = int(zoom_match.group(1))
+            # Validate frame index
+            if frame_idx < 0 or frame_idx >= self.total_frames:
+                return '', 0.0, True, {}
+
+            try:
+                # Initialize high-res VideoReader if not already done
+                if self.vr_highres is None:
+                    max_retries = 3
+                    base_delay = 2
+                    for attempt in range(max_retries):
+                        try:
+                            # Use original video resolution (no scaling)
+                            self.vr_highres = decord.VideoReader(
+                                self.video_path,
+                                ctx=decord.cpu(0)
+                            )
+                            break
+                        except Exception as e:
+                            if "Resource temporarily unavailable" in str(e) and attempt < max_retries - 1:
+                                wait_time = (base_delay * (2 ** attempt)) + random.uniform(0, 1)
+                                print(
+                                    f"WARN: [Attempt {attempt + 1}/{max_retries}] Failed to open video for zoom. "
+                                    f"Retrying in {wait_time:.2f} seconds...")
+                                time.sleep(wait_time)
+                            else:
+                                print(
+                                    f"ERROR: [Attempt {attempt + 1}/{max_retries}] Failed to open video for zoom.")
+                                raise e
+
+                # Extract single high-resolution frame
+                frame_array = self.vr_highres[frame_idx].asnumpy()
+                frame_image = Image.fromarray(frame_array)
+
+                # Format response
+                user_msg = f"frame {frame_idx}: <image>"
+                all_user_msg = self.chat_template.format(user_msg)
+                obs_dict = {
+                    "prompt": all_user_msg,
+                    "multi_modal_data": {
+                        "image": [frame_image]
+                    }
+                }
+                return obs_dict, 0.0, False, {}
+            except Exception as e:
+                print(f"[ERROR] Failed to zoom in on frame {frame_idx} from video '{self.video_path}': {e}")
                 return '', 0.0, True, {}
 
         match = re.search(r"choose frames between (\d+) and (\d+)", action_block)
@@ -101,23 +151,19 @@ class ThinkWithVideo(ToolBase):
         self.height = kwargs.get('height')
         self.width = kwargs.get('width')
         self.vr = None
+        self.vr_highres = None  # Reset high-res VideoReader
         self.chatml_history = raw_prompt
         self.multi_modal_data = origin_multi_modal_data
 
+        # Set number of frames based on video duration
         if self.total_frames and self.fps:
             duration_seconds = self.total_frames / self.fps
-            if duration_seconds > 300:
+            if duration_seconds > 300:  # Long video (> 5 minutes)
                 self.num_frames_per_sample = 12
-                self.max_width = 448
-                self.max_height = 252
-            else:
+            else:  # Short video (<= 5 minutes)
                 self.num_frames_per_sample = 8
-                self.max_width = 640
-                self.max_height = 360
         else:
             self.num_frames_per_sample = 8
-            self.max_width = 640
-            self.max_height = 360
 
         assert 'image' in self.multi_modal_data.keys(), f'[ERROR] {origin_multi_modal_data=}'
         assert len(self.multi_modal_data['image']) > 0, f'[ERROR] {self.multi_modal_data["image"]=}'
@@ -179,15 +225,19 @@ class ThinkWithVideo(ToolBase):
         return focused_prompt_segment, focused_images_data
 
     def _calculate_target_dims(self) -> tuple[int, int]:
+        """Calculate target dimensions with short side = 256px."""
         w, h = self.width, self.height
+        target_short_side = 256
 
-        if w <= self.max_width and h <= self.max_height:
+        # Find the shorter side
+        short_side = min(w, h)
+
+        # If already small enough, keep original
+        if short_side <= target_short_side:
             return w, h
 
-        ratio_w = self.max_width / w
-        ratio_h = self.max_height / h
-        scale_ratio = min(ratio_w, ratio_h)
-
+        # Scale so that short side = 256
+        scale_ratio = target_short_side / short_side
         new_w = int(w * scale_ratio)
         new_h = int(h * scale_ratio)
 
