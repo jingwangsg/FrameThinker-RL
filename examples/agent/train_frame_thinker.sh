@@ -20,8 +20,8 @@ PROJECT_NAME=video_holmes_rl
 EXPERIMENT_NAME=framethinker_baseline
 SAVE_CHECKPOINT_DIR=$PROJECT_DIR/ckpt/video_reason
 REF_MODEL_PATH=$PROJECT_DIR/model_weights/Qwen2.5-VL-7B-Instruct
-TRAIN_FILES=$PROJECT_DIR/data/video_reason/Video-Holmes/train.parquet
-VAL_FILES=$PROJECT_DIR/data/video_reason/Video-Holmes/test.parquet
+TRAIN_FILES=$PROJECT_DIR/data/video_reason/Video-Holmes/train_v2.parquet
+VAL_FILES=$PROJECT_DIR/data/video_reason/Video-Holmes/test_v2.parquet
 
 python3 -m verl.trainer.main_ppo \
     "data.train_files=[${TRAIN_FILES}]" \
