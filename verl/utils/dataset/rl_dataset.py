@@ -27,6 +27,7 @@ from transformers import PreTrainedTokenizer, ProcessorMixin
 
 import verl.utils.torch_functional as verl_F
 from verl.utils.model import compute_position_id_with_mask
+from verl.utils.dataset.templates import get_message_template
 
 
 def collate_fn(data_list: list[dict]) -> dict:
@@ -70,7 +71,9 @@ class RLHFDataset(Dataset):
         self.processor = processor
         self.config = config
 
-        self.cache_dir = os.path.expanduser(config.get("cache_dir", "~/.cache/verl/rlhf"))
+        self.cache_dir = os.path.expanduser(
+            config.get("cache_dir", "~/.cache/verl/rlhf")
+        )
         self.prompt_key = config.get("prompt_key", "prompt")
         self.image_key = config.get("image_key", "images")
         self.video_key = config.get("video_key", "videos")
@@ -80,7 +83,9 @@ class RLHFDataset(Dataset):
         self.truncation = config.get("truncation", "error")
         self.filter_overlong_prompts = config.get("filter_overlong_prompts", True)
 
-        self.num_workers = config.get("filter_overlong_prompts_workers", max(1, os.cpu_count() // 4))
+        self.num_workers = config.get(
+            "filter_overlong_prompts_workers", max(1, os.cpu_count() // 4)
+        )
         self.num_workers = min(self.num_workers, os.cpu_count())
 
         # whether to store the dataset in state_dict()
@@ -92,15 +97,21 @@ class RLHFDataset(Dataset):
     def _download(self, use_origin_parquet=False):
         from verl.utils.fs import copy_to_local
 
-        data_files = self.data_files if not use_origin_parquet else self.original_data_files
+        data_files = (
+            self.data_files if not use_origin_parquet else self.original_data_files
+        )
         for i, parquet_file in enumerate(data_files):
-            self.data_files[i] = copy_to_local(src=parquet_file, cache_dir=self.cache_dir)
+            self.data_files[i] = copy_to_local(
+                src=parquet_file, cache_dir=self.cache_dir
+            )
 
     def _read_files_and_tokenize(self):
         dataframes = []
         for parquet_file in self.data_files:
             # read parquet files and cache
-            dataframe = datasets.load_dataset("parquet", data_files=parquet_file)["train"]
+            dataframe = datasets.load_dataset("parquet", data_files=parquet_file)[
+                "train"
+            ]
             dataframes.append(dataframe)
         self.dataframe: datasets.Dataset = datasets.concatenate_datasets(dataframes)
 
@@ -111,7 +122,11 @@ class RLHFDataset(Dataset):
             tokenizer = self.tokenizer
             prompt_key = self.prompt_key
             self.dataframe = self.dataframe.filter(
-                lambda doc: len(tokenizer.apply_chat_template(doc[prompt_key], add_generation_prompt=True))
+                lambda doc: len(
+                    tokenizer.apply_chat_template(
+                        doc[prompt_key], add_generation_prompt=True
+                    )
+                )
                 <= self.max_prompt_length,
                 num_proc=self.num_workers,
                 desc=f"Filtering prompts longer than {self.max_prompt_length} tokens",
@@ -123,16 +138,26 @@ class RLHFDataset(Dataset):
         self.serialize_dataset = not hasattr(self, "original_data_files")
         # resume dataframe if not it's serialized in data.pt
         if not self.serialize_dataset:
-            self._download(use_origin_parquet=True)  # download and resume from original parquet files
+            self._download(
+                use_origin_parquet=True
+            )  # download and resume from original parquet files
             self._read_files_and_tokenize()
         else:
-            print(r"old dataloader ckpt file is used, please train from scratch for better ckpt performance")
+            print(
+                r"old dataloader ckpt file is used, please train from scratch for better ckpt performance"
+            )
 
     def __len__(self):
         return len(self.dataframe)
 
     def _build_messages(self, example: dict):
         messages: list = example.pop(self.prompt_key)
+
+        message_template_name = self.config.get("message_template", "default")
+        apply_message_template = get_message_template(message_template_name)
+        messages = apply_message_template(messages, **example)
+
+        # print(messages)
 
         if self.image_key in example or self.video_key in example:
             for message in messages:
@@ -159,25 +184,39 @@ class RLHFDataset(Dataset):
         model_inputs = {}
 
         if self.processor is not None:
-            from verl.utils.dataset.vision_utils import process_image, process_raw_image, process_video
+            from verl.utils.dataset.vision_utils import (
+                process_image,
+                process_raw_image,
+                process_video,
+            )
 
-            raw_prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+            raw_prompt = self.processor.apply_chat_template(
+                messages, add_generation_prompt=True, tokenize=False
+            )
             multi_modal_data = {}
             origin_multi_modal_data = {}
 
             images = None
             if self.image_key in row_dict:
-                origin_images = [process_raw_image(image) for image in row_dict.get(self.image_key)]
-                images = [process_image(image) for image in row_dict.pop(self.image_key)]
+                origin_images = [
+                    process_raw_image(image) for image in row_dict.get(self.image_key)
+                ]
+                images = [
+                    process_image(image) for image in row_dict.pop(self.image_key)
+                ]
                 multi_modal_data["image"] = images
                 origin_multi_modal_data["image"] = origin_images
 
             videos = None
             if self.video_key in row_dict:
-                videos = [process_video(video) for video in row_dict.pop(self.video_key)]
+                videos = [
+                    process_video(video) for video in row_dict.pop(self.video_key)
+                ]
                 multi_modal_data["video"] = [video.numpy() for video in videos]
 
-            model_inputs = self.processor(text=[raw_prompt], images=images, videos=videos, return_tensors="pt")
+            model_inputs = self.processor(
+                text=[raw_prompt], images=images, videos=videos, return_tensors="pt"
+            )
 
             input_ids = model_inputs.pop("input_ids")
             attention_mask = model_inputs.pop("attention_mask")
@@ -186,7 +225,7 @@ class RLHFDataset(Dataset):
                 model_inputs.pop("second_per_grid_ts")
 
             # There's a trap here, multi_modal_inputs has to be a dict, not BatchFeature
-            row_dict['origin_multi_modal_data'] = origin_multi_modal_data
+            row_dict["origin_multi_modal_data"] = origin_multi_modal_data
             row_dict["multi_modal_data"] = multi_modal_data
             row_dict["multi_modal_inputs"] = dict(model_inputs)
 
@@ -194,8 +233,12 @@ class RLHFDataset(Dataset):
             row_dict["multi_modal_inputs"].pop("second_per_grid_ts", None)
 
         else:
-            raw_prompt = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
-            model_inputs = self.tokenizer(raw_prompt, return_tensors="pt", add_special_tokens=False)
+            raw_prompt = self.tokenizer.apply_chat_template(
+                messages, add_generation_prompt=True, tokenize=False
+            )
+            model_inputs = self.tokenizer(
+                raw_prompt, return_tensors="pt", add_special_tokens=False
+            )
             input_ids = model_inputs.pop("input_ids")
             attention_mask = model_inputs.pop("attention_mask")
 
@@ -208,7 +251,11 @@ class RLHFDataset(Dataset):
             truncation=self.truncation,
         )
 
-        if self.processor is not None and "Qwen2VLImageProcessor" in self.processor.image_processor.__class__.__name__:
+        if (
+            self.processor is not None
+            and "Qwen2VLImageProcessor"
+            in self.processor.image_processor.__class__.__name__
+        ):
             # qwen-vl mrope
             if "Qwen3VLProcessor" in self.processor.__class__.__name__:
                 from verl.models.transformers.qwen3_vl import get_rope_index
@@ -226,8 +273,14 @@ class RLHFDataset(Dataset):
             valid_mask = attention_mask[0].bool()
             text_position_ids = torch.ones((1, len(input_ids[0])), dtype=torch.long)
             text_position_ids[0, valid_mask] = torch.arange(valid_mask.sum().item())
-            position_ids = [torch.cat((text_position_ids, vision_position_ids), dim=0)]  # (1, 4, seq_length)
-        elif self.processor is not None and "Glm4vImageProcessor" in self.processor.image_processor.__class__.__name__:
+            position_ids = [
+                torch.cat((text_position_ids, vision_position_ids), dim=0)
+            ]  # (1, 4, seq_length)
+        elif (
+            self.processor is not None
+            and "Glm4vImageProcessor"
+            in self.processor.image_processor.__class__.__name__
+        ):
             from verl.models.transformers.glm4v import get_rope_index
 
             vision_position_ids = get_rope_index(
@@ -240,7 +293,9 @@ class RLHFDataset(Dataset):
             valid_mask = attention_mask[0].bool()
             text_position_ids = torch.ones((1, len(input_ids[0])), dtype=torch.long)
             text_position_ids[0, valid_mask] = torch.arange(valid_mask.sum().item())
-            position_ids = [torch.cat((text_position_ids, vision_position_ids), dim=0)]  # (1, 4, seq_length)
+            position_ids = [
+                torch.cat((text_position_ids, vision_position_ids), dim=0)
+            ]  # (1, 4, seq_length)
         else:
             position_ids = compute_position_id_with_mask(attention_mask)
 
@@ -255,7 +310,9 @@ class RLHFDataset(Dataset):
             elif self.truncation == "right":
                 raw_prompt_ids = raw_prompt_ids[: self.max_prompt_length]
             elif self.truncation == "error":
-                raise RuntimeError(f"Prompt length {len(raw_prompt_ids)} is longer than {self.max_prompt_length}.")
+                raise RuntimeError(
+                    f"Prompt length {len(raw_prompt_ids)} is longer than {self.max_prompt_length}."
+                )
 
         row_dict["raw_prompt_ids"] = raw_prompt_ids
         # encode prompts without chat template
@@ -266,9 +323,14 @@ class RLHFDataset(Dataset):
         index = row_dict.get("extra_info", {}).get("index", 0)
         row_dict["index"] = index
         extra_info = row_dict.get("extra_info", {})
-        if extra_info: 
-            row_dict["fps"] = extra_info.get("fps", "30") 
+        if extra_info:
+            row_dict["fps"] = extra_info.get("fps", "30")
             row_dict["video_path"] = extra_info.get("video_path", "")
+            if self.config.get("media_dir", None) and row_dict["video_path"] != "":
+                row_dict["video_path"] = os.path.join(
+                    self.config.get("media_dir"), row_dict["video_path"]
+                )
+
             row_dict["total_frames"] = extra_info.get("total_frames", 0)
             row_dict["height"] = extra_info.get("height", 0)
             row_dict["width"] = extra_info.get("width", 0)

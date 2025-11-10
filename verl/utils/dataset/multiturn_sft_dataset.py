@@ -82,6 +82,9 @@ class MultiTurnSFTDataset(Dataset):
         tokenizer = self.tokenizer
         messages = self.messages[item]
 
+
+        message_template = self.config.get("message_template", "default")
+
         # First, get the full conversation tokens
         full_tokens = tokenizer.apply_chat_template(
             messages, tokenize=True, return_tensors="pt", add_generation_prompt=False
