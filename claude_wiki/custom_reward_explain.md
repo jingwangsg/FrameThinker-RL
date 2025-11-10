@@ -6,7 +6,12 @@ FrameThinker-RL 训练框架提供了两种配置 reward function 的方式：
 1. **基于 `data_source` 的自动路由机制**（隐式配置）
 2. **显式指定自定义 reward function**（显式配置）
 
-本文档详细说明这两种机制的工作原理、配置方法和参数差异。
+本文档详细说明这两种机制的工作原理、配置方法、参数差异，以及**当两者同时存在时的优先级规则**。
+
+**关键要点**：
+- 数据文件（.parquet）中**不能配置** `custom_reward_function` 参数
+- 只有 `.sh 脚本`可以配置 reward function 和参数
+- 显式配置的优先级**高于**自动路由机制
 
 ---
 
@@ -157,9 +162,257 @@ def get_custom_reward_fn(config):
 
 ---
 
-## 三、think_with_video_reward 参数详解
+## 三、配置优先级与冲突处理
 
-### 3.1 函数签名与默认参数
+### 3.1 核心问题：数据与脚本同时配置时的优先级
+
+**问题场景**：如果同时在数据文件（.parquet）和训练脚本（.sh）中设置了 custom_reward_function 相关参数，系统会 follow 哪个？
+
+**答案**：**只会 follow .sh 脚本中的配置**。
+
+---
+
+### 3.2 为什么数据文件无法配置 custom_reward_function？
+
+#### 数据文件的实际作用
+
+数据文件（.parquet）中**不包含** `custom_reward_function` 的配置参数。数据文件只包含以下字段：
+
+```python
+{
+    "video_path": "path/to/video.mp4",
+    "prompt": [...],                           # 对话历史
+    "images": [...],                           # 初始帧
+    "metadata": {"answer_key": "A", ...},      # 元数据
+    "ground_truth": "A",                       # 正确答案
+    "data_source": "TencentARC/Video-Holmes",  # 数据集标识符
+    "env_name": "think_with_video",            # 环境名称
+    "reward_model": {"ground_truth": "A"},     # reward 计算所需的 ground_truth
+    "extra_info": {...}                        # 额外信息
+}
+```
+
+**关键点**：
+- `data_source` **不是用来配置 custom_reward_function**
+- `data_source` 只是一个**数据集标识符**，用于自动路由机制
+- 数据文件中没有 `custom_reward_function.path/name/reward_kwargs` 这些字段
+
+---
+
+### 3.3 配置加载流程分析
+
+#### 步骤 1：加载配置（只从 .sh 脚本读取）
+
+文件：`verl/trainer/main_ppo.py:181`
+```python
+# 只从 config（Hydra 配置）中读取 custom_reward_function
+compute_score = get_custom_reward_fn(config)
+```
+
+#### 步骤 2：创建 Reward Manager
+
+文件：`verl/trainer/main_ppo.py:183-189`
+```python
+reward_fn = reward_manager_cls(
+    tokenizer=tokenizer,
+    num_examine=0,
+    compute_score=compute_score,        # 这里传入的是从 .sh 配置加载的函数
+    reward_fn_key=config.data.reward_fn_key,  # 默认: "data_source"
+    **reward_kwargs,
+)
+```
+
+#### 步骤 3：运行时读取 data_source
+
+文件：`verl/workers/reward_manager/naive.py:78-87`
+```python
+# 从数据中读取 data_source 字段
+data_source = data_item.non_tensor_batch[self.reward_fn_key]  # reward_fn_key = "data_source"
+
+# 调用 compute_score（已经在初始化时确定）
+score, acc_score, format_score, other_score = self.compute_score(
+    data_source=data_source,      # 只是作为参数传递，不影响使用哪个函数
+    solution_str=response_str,
+    ground_truth=ground_truth,
+    extra_info=extra_info,
+)
+```
+
+**关键点**：
+- `data_source` 只是作为**参数**传递给 `compute_score` 函数
+- `compute_score` 函数本身已经在训练开始时确定（来自 .sh 配置）
+- `data_source` 不会改变使用哪个 reward function
+
+---
+
+### 3.4 两种机制的关系与优先级
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   .sh 脚本配置检查                            │
+│                                                               │
+│  custom_reward_function.path 是否为 null？                    │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+          ┌──────────────┴──────────────┐
+          │                             │
+      【是 null】                    【不是 null】
+          │                             │
+          ▼                             ▼
+┌─────────────────────┐      ┌──────────────────────────┐
+│  使用自动路由机制    │      │   使用显式配置的函数      │
+│                     │      │                          │
+│  1. 从数据读取      │      │  1. 加载指定文件中的函数  │
+│     data_source     │      │  2. 注入 reward_kwargs   │
+│  2. 根据 data_source│      │  3. 忽略 data_source     │
+│     路由到对应函数   │      │     (data_source 仅作为  │
+│  3. 使用函数内置的  │      │      参数传递，不影响     │
+│     默认参数        │      │      函数选择)           │
+└─────────────────────┘      └──────────────────────────┘
+          │                             │
+          └──────────────┬──────────────┘
+                         │
+                         ▼
+              ┌───────────────────┐
+              │   执行 reward     │
+              │   计算            │
+              └───────────────────┘
+```
+
+**优先级规则**：
+
+1. **最高优先级**：`.sh 脚本中的显式配置`
+   - 如果 `custom_reward_function.path` 不为 `null`
+   - 系统完全使用显式配置的函数和参数
+   - **完全忽略 data_source 的路由功能**
+
+2. **次级优先级**：`data_source 自动路由`
+   - 仅当 `custom_reward_function.path` 为 `null` 时启用
+   - 根据数据中的 `data_source` 字段选择 reward function
+   - 使用函数内置的默认参数
+
+3. **无效配置**：`数据文件中的 custom_reward_function`
+   - 数据文件格式不支持此类配置
+   - 即使手动添加，也会被忽略
+
+---
+
+### 3.5 实际示例对比
+
+#### 场景 1：只使用自动路由（train_frame_thinker.sh）
+
+**配置**：
+```bash
+# .sh 脚本中无显式配置
+python3 -m verl.trainer.main_ppo \
+    data.train_batch_size=32 \
+    trainer.total_epochs=10 $@
+```
+
+**数据文件**：
+```python
+{"data_source": "TencentARC/Video-Holmes", ...}
+```
+
+**结果**：
+- `get_custom_reward_fn(config)` 返回 `None`
+- 使用 `_default_compute_score` 进行自动路由
+- 根据 `data_source = "TencentARC/Video-Holmes"` 路由到 `think_with_video_reward.compute_score`
+- 使用默认参数：`nframes=8, lambda_gfn=0.5, lambda_cf=0.02`
+
+---
+
+#### 场景 2：显式配置覆盖（train_frame_thinker_vhonly.sh）
+
+**配置**：
+```bash
+python3 -m verl.trainer.main_ppo \
+    custom_reward_function.path=verl/utils/reward_score/think_with_video_reward.py \
+    custom_reward_function.name=compute_score \
+    +custom_reward_function.reward_kwargs.nframes=8 \
+    +custom_reward_function.reward_kwargs.lambda_gfn=0.2 \
+    +custom_reward_function.reward_kwargs.lambda_cf=0.0 \
+    $@
+```
+
+**数据文件**：
+```python
+{"data_source": "TencentARC/Video-Holmes", ...}  # 这个字段被忽略（用于路由的功能）
+```
+
+**结果**：
+- `get_custom_reward_fn(config)` 返回包装后的自定义函数
+- **完全不使用** `_default_compute_score` 自动路由
+- `data_source` 仅作为参数传递给函数，不影响函数选择
+- 使用显式参数：`nframes=8, lambda_gfn=0.2, lambda_cf=0.0`
+
+---
+
+#### 场景 3：假设数据和脚本同时配置（理论场景）
+
+**假设配置**：
+```bash
+# .sh 脚本配置
+custom_reward_function.path=verl/utils/reward_score/think_with_video_reward.py
++custom_reward_function.reward_kwargs.lambda_gfn=0.3
+```
+
+**假设数据文件**：
+```python
+{
+    "data_source": "other_dataset",  # 假设这会路由到不同的 reward function
+    "custom_reward_function": {...}  # 假设数据格式支持（实际不支持）
+}
+```
+
+**实际结果**：
+- ✅ 使用 `.sh 脚本` 中配置的 `think_with_video_reward.py`
+- ✅ 使用 `lambda_gfn=0.3`
+- ❌ **完全忽略** 数据文件中的 `data_source` 路由
+- ❌ **完全忽略** 数据文件中的假设配置（因为不支持）
+
+---
+
+### 3.6 为什么这样设计？
+
+#### 设计合理性
+
+1. **配置一致性**：
+   - 所有训练超参数都通过 Hydra 配置管理
+   - 避免配置分散在数据文件和脚本中，导致混乱
+
+2. **数据集独立性**：
+   - 数据文件只包含数据内容，不包含训练配置
+   - 同一数据集可以用不同的 reward function 训练
+
+3. **灵活性**：
+   - 通过修改 `.sh 脚本` 即可改变 reward 策略
+   - 无需重新生成数据文件
+
+4. **可复现性**：
+   - 所有配置都在代码仓库中（.sh 脚本）
+   - 数据文件只需提供一次，可重复使用
+
+---
+
+### 3.7 总结：配置优先级
+
+| 配置来源 | 是否有效 | 优先级 | 说明 |
+|---------|---------|--------|------|
+| `.sh 脚本显式配置` | ✅ 有效 | **最高** | 完全控制 reward function 和参数 |
+| `data_source 自动路由` | ✅ 有效 | 次级 | 仅当 .sh 未显式配置时启用 |
+| `数据文件配置` | ❌ 无效 | 无 | 数据格式不支持，即使添加也会被忽略 |
+
+**核心规则**：
+- **只有 .sh 脚本可以配置 custom_reward_function**
+- **数据文件只提供 data_source 用于自动路由**
+- **显式配置 > 自动路由 > 默认值**
+
+---
+
+## 四、think_with_video_reward 参数详解
+
+### 4.1 函数签名与默认参数
 
 文件：`verl/utils/reward_score/think_with_video_reward.py:14-23`
 ```python
@@ -176,7 +429,7 @@ def compute_score(data_source, solution_str, ground_truth, extra_info=None, **kw
     return a, b, c, d
 ```
 
-### 3.2 参数详细说明
+### 4.2 参数详细说明
 
 #### 参数 1: `nframes` (默认: 8)
 
@@ -261,7 +514,7 @@ Final: output answer: A
 
 ---
 
-### 3.3 返回值说明
+### 4.3 返回值说明
 
 ```python
 return total_score, acc_score, format_score, other_score
@@ -281,9 +534,9 @@ return total_score, acc_score, format_score, other_score
 
 ---
 
-## 四、两个脚本的参数对比
+## 五、两个脚本的参数对比
 
-### 4.1 参数对比表
+### 5.1 参数对比表
 
 | 参数 | train_frame_thinker.sh<br/>（自动路由，默认值） | train_frame_thinker_vhonly.sh<br/>（显式指定） | 差异 |
 |------|-----------------------------------------------|-----------------------------------------------|------|
@@ -291,7 +544,7 @@ return total_score, acc_score, format_score, other_score
 | `lambda_gfn` | **0.5** | **0.2** | ↓ 降低 60% |
 | `lambda_cf` | **0.02** | **0.0** | ↓ 完全禁用 |
 
-### 4.2 设计意图分析
+### 5.2 设计意图分析
 
 #### train_frame_thinker.sh（原始版本）
 - `lambda_gfn = 0.5`：**强烈鼓励**时间戳查询行为
@@ -316,9 +569,9 @@ return total_score, acc_score, format_score, other_score
 
 ---
 
-## 五、如何选择配置方式
+## 六、如何选择配置方式
 
-### 5.1 使用自动路由（方式一）的场景
+### 6.1 使用自动路由（方式一）的场景
 
 ✅ **适合**：
 - 数据集中 `data_source` 字段已正确设置
@@ -333,7 +586,7 @@ return total_score, acc_score, format_score, other_score
 
 ---
 
-### 5.2 使用显式配置（方式二）的场景
+### 6.2 使用显式配置（方式二）的场景
 
 ✅ **适合**：
 - 需要自定义 `nframes`、`lambda_gfn`、`lambda_cf` 等参数
@@ -347,9 +600,9 @@ return total_score, acc_score, format_score, other_score
 
 ---
 
-## 六、配置示例
+## 七、配置示例
 
-### 6.1 使用默认参数（自动路由）
+### 7.1 使用默认参数（自动路由）
 
 ```bash
 # train_frame_thinker.sh
@@ -365,7 +618,7 @@ python3 -m verl.trainer.main_ppo \
 
 ---
 
-### 6.2 自定义参数（显式配置）
+### 7.2 自定义参数（显式配置）
 
 ```bash
 # train_frame_thinker_vhonly.sh
@@ -384,7 +637,7 @@ python3 -m verl.trainer.main_ppo \
 
 ---
 
-### 6.3 其他自定义示例
+### 7.3 其他自定义示例
 
 #### 示例 1：完全禁用额外奖励，只看准确率
 ```bash
@@ -415,9 +668,9 @@ custom_reward_function.name=compute_score \
 
 ---
 
-## 七、数据格式要求
+## 八、数据格式要求
 
-### 7.1 Parquet 文件必需字段
+### 8.1 Parquet 文件必需字段
 
 使用自动路由时，数据文件（.parquet）需要包含：
 
@@ -449,9 +702,9 @@ custom_reward_function.name=compute_score \
 
 ---
 
-## 八、调试建议
+## 九、调试建议
 
-### 8.1 检查 reward function 是否正确加载
+### 9.1 检查 reward function 是否正确加载
 
 查看训练日志中的打印：
 ```
@@ -462,7 +715,7 @@ using customized reward function 'compute_score' from 'verl/utils/reward_score/t
 
 ---
 
-### 8.2 检查 reward 计算结果
+### 9.2 检查 reward 计算结果
 
 训练过程中会打印：
 ```
@@ -478,7 +731,7 @@ scores: 1.02 1.0 1.0 0.02
 
 ---
 
-### 8.3 消融实验建议
+### 9.3 消融实验建议
 
 比较不同配置的影响：
 
@@ -491,7 +744,7 @@ scores: 1.02 1.0 1.0 0.02
 
 ---
 
-## 九、总结
+## 十、总结
 
 ### 核心要点
 
@@ -499,24 +752,29 @@ scores: 1.02 1.0 1.0 0.02
    - 自动路由：简单、快速，使用默认参数
    - 显式配置：灵活、可调，支持自定义参数
 
-2. **默认参数**：
+2. **配置优先级**（重要）：
+   - **只有 .sh 脚本可以配置 custom_reward_function**
+   - 数据文件不支持配置，只提供 `data_source` 用于自动路由
+   - 显式配置 > 自动路由 > 默认值
+
+3. **默认参数**：
    - `nframes = 8`：最小帧间隔
    - `lambda_gfn = 0.5`：时间戳查询奖励
    - `lambda_cf = 0.02`：多轮帧选择奖励
 
-3. **VH-only 配置差异**：
+4. **VH-only 配置差异**：
    - 降低时间戳查询奖励（0.5 → 0.2）
    - 禁用多轮帧选择奖励（0.02 → 0.0）
    - 更关注答案准确性
 
-4. **选择建议**：
+5. **选择建议**：
    - 快速实验 → 使用自动路由
    - 精细调优 → 使用显式配置
    - 消融实验 → 必须使用显式配置
 
 ---
 
-## 十、参考文件
+## 十一、参考文件
 
 | 文件路径 | 作用 |
 |---------|------|
@@ -530,6 +788,7 @@ scores: 1.02 1.0 1.0 0.02
 
 ---
 
-**文档版本**: v1.0
+**文档版本**: v1.1
 **最后更新**: 2025-11-10
+**更新内容**: 新增第三章"配置优先级与冲突处理"，详细说明数据文件与脚本配置的优先级关系
 **维护者**: FrameThinker-RL Team
