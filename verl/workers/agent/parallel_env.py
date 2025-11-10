@@ -18,6 +18,7 @@ from verl.utils.dataset.vision_utils import (
 )
 from verl.utils.torch_functional import pad_2d_list_to_length
 from verl.workers.agent.tool_envs import ToolBase
+from loguru import logger
 
 
 def _strip_system_block(text: str) -> str:
@@ -144,8 +145,8 @@ def agent_rollout_loop(
     if custom_stop:
         prev_stop = sampling_params.stop if sampling_params.stop else []
         agent_sampling_params.stop = prev_stop + custom_stop
-        print(
-            f" [DEBUG stop] {type(prev_stop)=}, {type(custom_stop)=}, {type(agent_sampling_params.stop)=}"
+        logger.debug(
+            f"{type(prev_stop)=}, {type(custom_stop)=}, {type(agent_sampling_params.stop)=}"
         )
 
     # Refer to: https://github.com/vllm-project/vllm/issues/1728
@@ -202,8 +203,8 @@ def agent_rollout_loop(
     pg = vllm_ps.get_tp_group()
     max_total_length = config.prompt_length + config.response_length
     for step in range(config.agent.max_turns):
-        print(
-            f" [DEBUG 000] {step=}, total={batch_size}, n={sampling_params.n}, num_active={sum(active_mask)}"
+        logger.debug(
+            f"{step=}, total={batch_size}, n={sampling_params.n}, num_active={sum(active_mask)}"
         )
         if sum(active_mask) == 0:
             break
@@ -391,13 +392,23 @@ def agent_rollout_loop(
             )  # (3, seq_length)
 
             valid_mask = attn_mask_tensor[i, :].bool()
-            text_position_ids = torch.ones((1, len(state_tensor[i, :])), dtype=torch.long, device=state_tensor.device)
-            text_position_ids[0, valid_mask] = torch.arange(valid_mask.sum().item(), device=state_tensor.device)
+            text_position_ids = torch.ones(
+                (1, len(state_tensor[i, :])),
+                dtype=torch.long,
+                device=state_tensor.device,
+            )
+            text_position_ids[0, valid_mask] = torch.arange(
+                valid_mask.sum().item(), device=state_tensor.device
+            )
 
-            position_ids = torch.cat((text_position_ids, vision_position_ids), dim=0)  # (4, seq_length)
+            position_ids = torch.cat(
+                (text_position_ids, vision_position_ids), dim=0
+            )  # (4, seq_length)
             position_ids_list.append(position_ids)
 
-        position_ids_tensor = torch.stack(position_ids_list, dim=0)  # (batch, 4, seq_len)
+        position_ids_tensor = torch.stack(
+            position_ids_list, dim=0
+        )  # (batch, 4, seq_len)
     else:
         # For LM: (n*bs, seq_len)
         position_ids_tensor = compute_position_id_with_mask(attn_mask_tensor)
