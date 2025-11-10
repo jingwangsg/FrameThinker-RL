@@ -892,6 +892,15 @@ class RayPPOTrainer:
                 config=self.config.reward_model,
             )
             self.resource_pool_to_cls[resource_pool]["rm"] = rm_cls
+        
+        ########## Add verifier ##########
+        # _raw_value = self.actor_rollout_wg.rollout.config.activate_agent
+        # self.actor_rollout_wg.rollout.config.activate_agent = False
+        # # generate sequences 
+        # self.actor_rollout_wg.rollout.config.activate_agent = _raw_value
+
+        ##################################
+
 
         # initialize WorkerGroup
         # NOTE: if you want to use a different resource pool for each role, which can support different parallel size,
@@ -1206,11 +1215,11 @@ class RayPPOTrainer:
                             gen_batch
                         )
                     
-                    print("gen_batch")
-                    gen_batch.pretty_print()
+                    # print("gen_batch")
+                    # gen_batch.pretty_print()
                     
-                    print("gen_batch_output")
-                    gen_batch_output.pretty_print()
+                    # print("gen_batch_output")
+                    # gen_batch_output.pretty_print()
 
                     if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
                         with _timer("gen_max", timing_raw):
@@ -1297,6 +1306,8 @@ class RayPPOTrainer:
                         # compute scores. Support both model and function-based.
                         # We first compute the scores using reward model. Then, we call reward_fn to combine
                         # the results from reward model and rule-based results.
+
+                        
                         if self.use_rm:
                             # we first compute reward model score
                             reward_tensor = self.rm_wg.compute_rm_score(batch)

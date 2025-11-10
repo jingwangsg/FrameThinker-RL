@@ -8,20 +8,23 @@ def print_answer(text: str, ground_truth: str):
     print("predict_str:",compact_image_pads(text))
     print("ground_truth:", ground_truth)  
     
-def compute_score(predict_str: str, ground_truth: str, extra_info=None):
-    a,b,c,d= v11(predict_str, ground_truth, extra_info)
+def compute_score(data_source, solution_str, ground_truth, extra_info=None, **kwargs):
+    nframes = kwargs.get('nframes', 8)
+    lambda_gfn = kwargs.get('lambda_gfn', 0.5)
+    lambda_cf = kwargs.get('lambda_cf', 0.02)
+    a,b,c,d= v11(solution_str, ground_truth, extra_info, nframes, lambda_gfn, lambda_cf)
     print("========================start of text========================")
-    print_answer(predict_str,ground_truth)
+    print_answer(solution_str,ground_truth)
     print("scores:", a,b,c,d)
     print("========================end of text========================")
     return a,b,c,d
 
-def v11(predict_str: str, ground_truth: str, extra_info=None):
+def v11(predict_str: str, ground_truth: str, extra_info=None,
+        nframes=8, lambda_gfn=0.5, lambda_cf=0.02):
     format_score = 0.0
     acc_score = 0.0
     other_score = 0.0
     total_score = 0.0
-    nframes = 8
     question=extra_info['question']
     time_reward=False
 
@@ -111,9 +114,9 @@ def v11(predict_str: str, ground_truth: str, extra_info=None):
         if time_reward:
             time_pattern = re.compile(r'\d+:\d+(:\d+)?')
             if re.search(time_pattern, question):
-                other_score += 0.5
+                other_score += lambda_gfn
         if len(action_frame_pairs)>1:
-            other_score += 0.02
+            other_score += lambda_cf
     total_score = acc_score + other_score
 
     return total_score, acc_score, format_score, other_score
