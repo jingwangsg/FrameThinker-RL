@@ -20,6 +20,7 @@ PROJECT_NAME=video_holmes_rl
 EXP_NAME=${EXP_NAME:-framethinker_vonly}
 SAVE_CHECKPOINT_DIR=$PROJECT_DIR/ckpt/video_reason
 MODEL_PATH=${MODEL_PATH:-$PROJECT_DIR/model_weights/Qwen2.5-VL-7B-Instruct}
+MEDIA_DIA=${MODEL_PATH:-$PROJECT_DIR/data/video_reason/Video-Holmes/videos/}
 TRAIN_FILES=${TRAIN_FILES:-$PROJECT_DIR/data/video_reason/Video-Holmes/train.parquet}
 VAL_FILES=${VAL_FILES:-$PROJECT_DIR/data/video_reason/Video-Holmes/test.parquet}
 
@@ -30,7 +31,7 @@ PYTHONUNBUFFERED=1  python3 -m verl.trainer.main_ppo \
     data.train_batch_size=32 \
     data.max_prompt_length=16384 \
     data.max_response_length=16384 \
-    data.media_dir=/mnt/amlfs-03/shared/datasets/s3:/video_reason/ \
+    data.media_dir=${MEDIA_DIA} \
     data.return_raw_chat=True \
     data.filter_overlong_prompts=False \
     data.dataloader_num_workers=8 \
