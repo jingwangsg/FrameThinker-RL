@@ -11,6 +11,25 @@ def print_answer(text: str, ground_truth: str):
     print("ground_truth:", ground_truth)
 
 
+# def compute_score(
+#     predict_str: str,
+#     ground_truth: str,
+#     extra_info=None,
+#     nframes=8,
+#     lambda_gfn=0.5,
+#     lambda_cf=0.02,
+#     **kwargs,
+# ):
+#     a, b, c, d = v11(
+#         predict_str, ground_truth, extra_info, nframes, lambda_gfn, lambda_cf
+#     )
+#     print("========================start of text========================")
+#     print_answer(predict_str, ground_truth)
+#     print("scores:", a, b, c, d)
+#     print("========================end of text========================")
+#     return a, b, c, d
+
+
 def compute_score(
     predict_str: str,
     ground_truth: str,
@@ -18,6 +37,7 @@ def compute_score(
     nframes=8,
     lambda_gfn=0.5,
     lambda_cf=0.02,
+    **kwargs,
 ):
     format_score = 0.0
     acc_score = 0.0

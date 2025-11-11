@@ -208,7 +208,7 @@ def agent_rollout_loop(
         )
         if sum(active_mask) == 0:
             break
-
+        
         active_indices = [idx for idx, is_active in enumerate(active_mask) if is_active]
         active_vllm_inputs = [
             vinput

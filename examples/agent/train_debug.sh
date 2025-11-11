@@ -3,8 +3,8 @@ set -x
 BASE_DATA_DIR=/mnt/amlfs-03/shared/datasets/s3:/video_reason/Video-Holmes
 PROJECT_NAME=video_holmes_rl
 EXP_NAME=${EXP_NAME:-framethinker_baseline}
-SAVE_CHECKPOINT_DIR=/mnt/amlfs-02/shared/checkpoints/jingwang/video_reason/
-MODEL_PATH=${MODEL_PATH:-Qwen/Qwen2.5-VL-7B-Instruct}
+SAVE_CHECKPOINT_DIR=/tmp/debug_$(date +%s%N)
+MODEL_PATH=${MODEL_PATH:-Qwen/Qwen2.5-VL-3B-Instruct}
 TRAIN_FILES=${TRAIN_FILES:-/mnt/amlfs-03/shared/datasets/s3:/video_reason/Video-Holmes/train.parquet}
 VAL_FILES=${VAL_FILES:-/mnt/amlfs-03/shared/datasets/s3:/video_reason/Video-Holmes/test.parquet}
 

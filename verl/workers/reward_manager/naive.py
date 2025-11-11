@@ -80,10 +80,10 @@ class NaiveRewardManager:
             extra_info = data_item.non_tensor_batch.get("extra_info", None)
 
             score,acc_score,format_score,other_score = self.compute_score(
-                data_source=data_source,
-                solution_str=response_str,
+                predict_str=response_str,
                 ground_truth=ground_truth,
                 extra_info=extra_info,
+                data_source=data_source,
             )
 
             # if isinstance(score, dict):
