@@ -1,12 +1,27 @@
-set -x
+#!/bin/bash
+# run on 8xH100
+# make sure your current working directory is the root of the project
+swanlab login --api-key <api_key>
 
-BASE_DATA_DIR=/mnt/amlfs-03/shared/datasets/s3:/video_reason/Video-Holmes
+set -x
+ulimit -n 65535
+
+echo "Environment Variables:"
+echo "  MASTER_ADDR: $MASTER_ADDR"
+echo "  MASTER_PORT: $MASTER_PORT"
+echo "  WORLD_SIZE: $WORLD_SIZE"
+echo "  RANK: $RANK"
+echo "  NPROC_PER_NODE: $NPROC_PER_NODE"
+
+PROJECT_DIR="$(pwd)"
+
+BASE_DATA_DIR=$PROJECT_DIR/data/video_reason/Video-Holmes
 PROJECT_NAME=video_holmes_rl
-EXP_NAME=${EXP_NAME:-framethinker_baseline}
-SAVE_CHECKPOINT_DIR=/mnt/amlfs-02/shared/checkpoints/jingwang/video_reason/
-MODEL_PATH=${MODEL_PATH:-Qwen/Qwen2.5-VL-7B-Instruct}
-TRAIN_FILES=${TRAIN_FILES:-/mnt/amlfs-03/shared/datasets/s3:/video_reason/Video-Holmes/train.parquet}
-VAL_FILES=${VAL_FILES:-/mnt/amlfs-03/shared/datasets/s3:/video_reason/Video-Holmes/test.parquet}
+EXP_NAME=${EXP_NAME:-framethinker_vonly}
+SAVE_CHECKPOINT_DIR=$PROJECT_DIR/ckpt/video_reason
+MODEL_PATH=${MODEL_PATH:-$PROJECT_DIR/model_weights/Qwen2.5-VL-7B-Instruct}
+TRAIN_FILES=${TRAIN_FILES:-$PROJECT_DIR/data/video_reason/Video-Holmes/train.parquet}
+VAL_FILES=${VAL_FILES:-$PROJECT_DIR/data/video_reason/Video-Holmes/test.parquet}
 
 
 PYTHONUNBUFFERED=1  python3 -m verl.trainer.main_ppo \
