@@ -155,7 +155,8 @@ def process_single_sample(
 
         # Build prompt with actual frame indices
         question = example["question"]
-        prompt = build_prompt(question, frame_indices=frame_indices)
+        # prompt = build_prompt(question, frame_indices=frame_indices)
+        prompt = build_prompt(question)
 
         # Get ground truth
         ground_truth = example["answer"]
