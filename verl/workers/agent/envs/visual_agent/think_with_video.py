@@ -23,7 +23,7 @@ class ThinkWithVideo(ToolBase):
     name = "think_with_video"
     action_start = '<action>'
     action_end = '</action>'
-    chat_template = "<|im_end|>\n<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n"
+    chat_template = """<|im_end|>\n<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant"""
 
     def __init__(self, _name, _desc, _params, **kwargs):
         self.chatml_history = []

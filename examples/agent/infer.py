@@ -14,9 +14,9 @@ import decord
 CONFIG = {
     # "MODEL_PATH": "/mnt/aws-lfs-01/shared/checkpoints/jingwang/video_reason/sft/qwen2_5vl_7b_sft_full_framethinker_base/",
     "MODEL_PATH": "Qwen/Qwen2.5-VL-7B-Instruct",
-    "BASE_VIDEO_DIR": "/mnt/aws-lfs-01/shared/datasets/s3:/video_reason/",
+    "BASE_VIDEO_DIR": "/mnt/aws-lfs-01/shared/datasets/s3/video_reason/",
     "BASE_FRAME_DIR_ROOT": "/tmp/video_frames",
-    "TARGET_JSON_PATH": "/mnt/aws-lfs-01/shared/datasets/s3:/video_reason/Video-Holmes/test.json",
+    "TARGET_JSON_PATH": "/mnt/aws-lfs-01/shared/datasets/s3/video_reason/Video-Holmes/test.json",
     "MAX_ITERATIONS": 5,
     "MAX_RETRIES": 3,
     "NUM_FRAMES_TO_SAMPLE": 8,

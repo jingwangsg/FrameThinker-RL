@@ -1,0 +1,3 @@
+python scripts/convert_to_rl_parquet.py /mnt/amlfs-02/shared/datasets/s3/video_reason/Video-Holmes/test.json --num-frames 8 --media-dir /mnt/amlfs-02/shared/datasets/s3/video_reason/ -o /mnt/amlfs-02/shared/datasets/s3/video_reason/Video-Holmes/test.parquet --data-source TencentARC/Video-Holmes
+
+python scripts/convert_to_rl_parquet.py /mnt/amlfs-02/shared/datasets/s3/video_reason/Video-Holmes/train.json --num-frames 8 --media-dir /mnt/amlfs-02/shared/datasets/s3/video_reason/ -o /mnt/amlfs-02/shared/datasets/s3/video_reason/Video-Holmes/train.parquet --data-source TencentARC/Video-Holmes

@@ -1,0 +1,5 @@
+python scripts/convert_to_rl_parquet.py /mnt/amlfs-02/shared/datasets/s3/video_reason/BENCHMARKS/eval_mmvu.json --num-frames 8 --media-dir /mnt/amlfs-02/shared/datasets/s3/video_reason/ -o /mnt/amlfs-02/shared/datasets/s3/video_reason/BENCHMARKS/mmvu.parquet --data-source mmvu
+
+python scripts/convert_to_rl_parquet.py "/mnt/amlfs-02/shared/datasets/s3/video_reason/BENCHMARKS/eval_videommmu_mcq.json" --num-frames 8 --media-dir "/mnt/amlfs-02/shared/datasets/s3/video_reason/" -o "/mnt/amlfs-02/shared/datasets/s3/video_reason/BENCHMARKS/videommmu_mcq.parquet" --data-source videommmu_mcq
+
+python scripts/convert_to_rl_parquet.py /mnt/amlfs-02/shared/datasets/s3/video_reason/BENCHMARKS/eval_vsibench_mcq.json --num-frames 8 --media-dir /mnt/amlfs-02/shared/datasets/s3/video_reason/ -o /mnt/amlfs-02/shared/datasets/s3/video_reason/BENCHMARKS/vsibench_mcq.parquet --data-source vsibench_mcq

@@ -15,13 +15,10 @@ from typing import Dict, List, Any
 import io
 import os
 
-import decord
 import numpy as np
 from datasets import load_dataset, Dataset
 from PIL import Image
-
-# Set decord to use native bridge
-decord.bridge.set_bridge("native")
+from torchcodec.decoders import VideoDecoder
 
 
 def get_video_metadata(video_path: str) -> Dict[str, any]:
@@ -72,7 +69,7 @@ def extract_frames(
     video_path: str, num_frames: int = 8
 ) -> tuple[List[Dict], List[int]]:
     """
-    Extract evenly-spaced frames from video using decord.
+    Extract evenly-spaced frames from video using torchcodec VideoDecoder.
 
     Args:
         video_path: Path to video file
@@ -83,19 +80,24 @@ def extract_frames(
         - frames: List of dicts with 'bytes' and 'path' keys
         - frame_indices: List of actual frame indices extracted
     """
-    # Open video with decord
-    vr = decord.VideoReader(video_path, ctx=decord.cpu(0))
-    total_frames = len(vr)
+    # Open video with torchcodec
+    decoder = VideoDecoder(video_path, num_ffmpeg_threads=0)
+    total_frames = len(decoder)
 
     # Calculate frame indices (evenly spaced, excluding last frame)
     frame_indices = np.linspace(0, total_frames - 1, num_frames, dtype=int).tolist()
 
     frames = []
     for idx in frame_indices:
-        # Get frame (already in RGB format)
-        frame = vr[idx].asnumpy()
+        # Get frame (returns torch tensor in CHW format)
+        frame_tensor = decoder[idx]
 
-        # Convert to PIL Image
+        # Convert from CHW to HWC and to numpy
+        frame = frame_tensor.permute(1, 2, 0).cpu().numpy()
+
+        # Convert to PIL Image (ensure uint8)
+        if frame.dtype != np.uint8:
+            frame = (frame * 255).astype(np.uint8) if frame.max() <= 1.0 else frame.astype(np.uint8)
         pil_image = Image.fromarray(frame)
 
         # Convert to PNG bytes
@@ -123,7 +125,11 @@ def build_prompt(question: str) -> List[Dict]:
 
 
 def process_single_sample(
-    example: Dict[str, Any], idx: int, media_dir: str, num_frames: int = 8
+    example: Dict[str, Any],
+    idx: int,
+    media_dir: str,
+    num_frames: int = 8,
+    data_source: str = "TencentARC/Video-Holmes",
 ) -> Dict[str, Any]:
     """
     Process a single sample for datasets.map().
@@ -155,7 +161,6 @@ def process_single_sample(
 
         # Build prompt with actual frame indices
         question = example["question"]
-        # prompt = build_prompt(question, frame_indices=frame_indices)
         prompt = build_prompt(question)
 
         # Get ground truth
@@ -167,7 +172,7 @@ def process_single_sample(
             "height": video_meta["height"],
             "width": video_meta["width"],
             "total_frames": video_meta["total_frames"],
-            "video_path": video_path, # should be relative path
+            "video_path": video_path,  # should be relative path
             "answer": ground_truth,
             "question": question,
             "split": example.get("metadata", {}).get("split", "train"),
@@ -182,7 +187,7 @@ def process_single_sample(
 
         # Build RL format sample
         return {
-            "data_source": "TencentARC/Video-Holmes",
+            "data_source": data_source,
             "prompt": prompt,
             "images": frames,
             "ability": "vl_video_reasoning",
@@ -199,6 +204,28 @@ def process_single_sample(
         return None
 
 
+def get_empty_sample_schema():
+    """
+    Return empty schema matching successful samples for failed processing.
+
+    This ensures schema consistency across all samples during multiprocessing,
+    preventing KeyError when datasets.map() tries to merge results.
+    """
+    return {
+        "_skip": True,
+        "data_source": "",
+        "prompt": [],
+        "images": [],
+        "ability": "",
+        "env_name": "",
+        "reward_model": {},
+        "ground_truth": "",
+        "question_type": "",
+        "metadata": {},
+        "extra_info": {},
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Convert Video-Holmes JSON to RL parquet format (using datasets with multiprocessing)"
@@ -212,6 +239,12 @@ def main():
         type=str,
         default=None,
         help="Path to output parquet file (default: same name as JSON with .parquet extension)",
+    )
+    parser.add_argument(
+        "--data-source",
+        type=str,
+        default="TencentARC/Video-Holmes",
+        help="Data source name (default: TencentARC/Video-Holmes)",
     )
     parser.add_argument(
         "--num-frames",
@@ -259,10 +292,13 @@ def main():
             idx=idx,
             media_dir=args.media_dir,
             num_frames=args.num_frames,
+            data_source=args.data_source,
         )
-        # Return empty dict if processing failed (will be filtered out)
+        # Return consistent schema if processing failed (will be filtered out)
         if result is None:
-            return {"_skip": True}
+            return get_empty_sample_schema()
+        # Add skip flag to successful results for consistency
+        result["_skip"] = False
         return result
 
     processed_dataset = dataset.map(

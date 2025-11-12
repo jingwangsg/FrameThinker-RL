@@ -2,7 +2,7 @@ import re
 
 
 def compact_image_pads(text: str) -> str:
-    compacted_text = re.sub(r'(<\|image_pad\|>)+', r'<|image_pad|>', text)
+    compacted_text = re.sub(r"(<\|image_pad\|>)+", r"<|image_pad|>", text)
     return compacted_text
 
 
@@ -11,46 +11,61 @@ def print_answer(text: str, ground_truth: str):
     print("ground_truth:", ground_truth)
 
 
-def compute_score(data_source, solution_str, ground_truth, extra_info=None, **kwargs):
-    nframes = kwargs.get('nframes', 8)
-    lambda_gfn = kwargs.get('lambda_gfn', 0.5)
-    lambda_cf = kwargs.get('lambda_cf', 0.02)
-    a, b, c, d = v11(solution_str, ground_truth, extra_info, nframes, lambda_gfn, lambda_cf)
-    print("========================start of text========================")
-    print_answer(solution_str, ground_truth)
-    print("scores:", a, b, c, d)
-    print("========================end of text========================")
-    return a, b, c, d
+# def compute_score(
+#     predict_str: str,
+#     ground_truth: str,
+#     extra_info=None,
+#     nframes=8,
+#     lambda_gfn=0.5,
+#     lambda_cf=0.02,
+#     **kwargs,
+# ):
+#     a, b, c, d = v11(
+#         predict_str, ground_truth, extra_info, nframes, lambda_gfn, lambda_cf
+#     )
+#     print("========================start of text========================")
+#     print_answer(predict_str, ground_truth)
+#     print("scores:", a, b, c, d)
+#     print("========================end of text========================")
+#     return a, b, c, d
 
 
-def v11(predict_str: str, ground_truth: str, extra_info=None,
-        nframes=8, lambda_gfn=0.5, lambda_cf=0.02):
+def compute_score(
+    predict_str: str,
+    ground_truth: str,
+    extra_info=None,
+    nframes=8,
+    lambda_gfn=0.5,
+    lambda_cf=0.02,
+    **kwargs,
+):
     format_score = 0.0
     acc_score = 0.0
     other_score = 0.0
     total_score = 0.0
-    question = extra_info['question']
+    question = extra_info["question"]
     time_reward = False
 
     try:
-        think_contents = re.findall(
-            r'<think>(.*?)</think>', predict_str, re.DOTALL)
-        action_contents = re.findall(
-            r'<action>(.*?)</action>', predict_str, re.DOTALL)
-        system_responses = re.findall(
-            r'</action>(.*?)<think>', predict_str, re.DOTALL)
+        think_contents = re.findall(r"<think>(.*?)</think>", predict_str, re.DOTALL)
+        action_contents = re.findall(r"<action>(.*?)</action>", predict_str, re.DOTALL)
+        system_responses = re.findall(r"</action>(.*?)<think>", predict_str, re.DOTALL)
     except Exception as e:
         return total_score, acc_score, format_score, other_score
 
-    if not think_contents or not action_contents or len(think_contents) != len(action_contents):
+    if (
+        not think_contents
+        or not action_contents
+        or len(think_contents) != len(action_contents)
+    ):
         return total_score, acc_score, format_score, other_score
 
     last_action = action_contents[-1].strip()
-    answer_match = re.match(r'output answer:\s*(\S+)', last_action)
+    answer_match = re.match(r"output answer:\s*(\S+)", last_action)
     if not answer_match:
         return total_score, acc_score, format_score, other_score
 
-    action_frame_pairs = [(0, extra_info['total_frames']-1)]
+    action_frame_pairs = [(0, extra_info["total_frames"] - 1)]
     requested_times = []
     expected_frame_in_next_action = None
 
@@ -60,7 +75,8 @@ def v11(predict_str: str, ground_truth: str, extra_info=None,
 
         if expected_frame_in_next_action is not None:
             frame_match_for_check = re.match(
-                r'choose frames between (\d+) and (\d+)', action)
+                r"choose frames between (\d+) and (\d+)", action
+            )
             if frame_match_for_check:
                 start_f = int(frame_match_for_check.group(1))
                 end_f = int(frame_match_for_check.group(2))
@@ -68,13 +84,12 @@ def v11(predict_str: str, ground_truth: str, extra_info=None,
                     return total_score, acc_score, format_score, other_score
             expected_frame_in_next_action = None
 
-        frame_match = re.match(
-            r'choose frames between (\d+) and (\d+)', action)
+        frame_match = re.match(r"choose frames between (\d+) and (\d+)", action)
         if frame_match:
             num1 = int(frame_match.group(1))
             num2 = int(frame_match.group(2))
             current_pair = (num1, num2)
-            check_pair = (num1+1, num2-1)
+            check_pair = (num1 + 1, num2 - 1)
             if current_pair in action_frame_pairs:
                 return total_score, acc_score, format_score, other_score
             action_frame_pairs.append(current_pair)
@@ -83,7 +98,7 @@ def v11(predict_str: str, ground_truth: str, extra_info=None,
             if num1 >= num2 - nframes:
                 return total_score, acc_score, format_score, other_score
 
-            numbers_in_think = re.findall(r'(?<!:)\b(\d+)\b(?!:)', think_block)
+            numbers_in_think = re.findall(r"(?<!:)\b(\d+)\b(?!:)", think_block)
             if len(numbers_in_think) >= 2:
                 num_a, num_b = map(int, numbers_in_think[-2:])
                 if (num_a, num_b) != current_pair:
@@ -92,8 +107,7 @@ def v11(predict_str: str, ground_truth: str, extra_info=None,
                 return total_score, acc_score, format_score, other_score
             continue
 
-        time_match = re.match(
-            r'get frame number at time\s+(\d{1,3}:\d{2})', action)
+        time_match = re.match(r"get frame number at time\s+(\d{1,3}:\d{2})", action)
         if time_match:
             time_str_action = time_match.group(1)
 
@@ -102,7 +116,7 @@ def v11(predict_str: str, ground_truth: str, extra_info=None,
             requested_times.append(time_str_action)
 
             system_response = system_responses[i].strip()
-            response_match = re.search(r'is:\s*(\d+)', system_response)
+            response_match = re.search(r"is:\s*(\d+)", system_response)
             if response_match:
                 expected_frame_in_next_action = int(response_match.group(1))
                 if expected_frame_in_next_action > 0:
@@ -122,7 +136,7 @@ def v11(predict_str: str, ground_truth: str, extra_info=None,
     if model_answer == ground_truth:
         acc_score = 1.0
         if time_reward:
-            time_pattern = re.compile(r'\d+:\d+(:\d+)?')
+            time_pattern = re.compile(r"\d+:\d+(:\d+)?")
             if re.search(time_pattern, question):
                 other_score += lambda_gfn
         if len(action_frame_pairs) > 1:
