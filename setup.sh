@@ -34,3 +34,8 @@ fi
 if [ ! -d "model_weights/ft_coldstart" ]; then
     huggingface-cli download --repo-type dataset --resume-download k-nick/ft_coldstart --local-dir model_weights/ft_coldstart
 fi
+
+# start to train the model
+# ray start --head --resources='{"drivers": 1}'
+# chmod a+x examples/agent/train_frame_thinker_vhonly.sh
+# ./examples/agent/train_frame_thinker_vhonly.sh
