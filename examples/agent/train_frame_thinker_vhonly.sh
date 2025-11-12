@@ -20,7 +20,7 @@ PROJECT_NAME=video_holmes_rl
 EXP_NAME=${EXP_NAME:-framethinker_vonly}
 SAVE_CHECKPOINT_DIR=$PROJECT_DIR/ckpt/video_reason
 MODEL_PATH=${MODEL_PATH:-$PROJECT_DIR/model_weights/ft_coldstart/qwen2_5vl_7b_full_framethinker_sft}
-MEDIA_DIA=${MODEL_PATH:-$PROJECT_DIR/data/video_reason/Video-Holmes/videos/}
+MEDIA_DIA=${MEDIA_DIA:-$PROJECT_DIR/data/video_reason/}
 TRAIN_FILES=${TRAIN_FILES:-$PROJECT_DIR/data/video_reason/Video-Holmes/train.parquet}
 VAL_FILES=${VAL_FILES:-$PROJECT_DIR/data/video_reason/Video-Holmes/test.parquet}
 
