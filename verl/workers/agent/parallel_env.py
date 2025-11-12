@@ -215,6 +215,7 @@ def agent_rollout_loop(
             for vinput, is_active in zip(vllm_input_list, active_mask)
             if is_active
         ]
+
         actions = vllm_engine.generate(
             prompts=active_vllm_inputs,
             sampling_params=agent_sampling_params,

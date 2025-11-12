@@ -1,51 +1,41 @@
+set CKPT_FULL /mnt/amlfs-02/shared/checkpoints/jingwang/video_reason/sft/qwen2_5vl_7b_full_framethinker_sft
+set CKPT_LORA /mnt/amlfs-02/shared/checkpoints/jingwang/video_reason/sft/qwen2_5vl_7b_lorar8_framethinker
+set CKPT_LORA_EP6 /mnt/amlfs-02/shared/checkpoints/jingwang/video_reason/sft/qwen2_5vl_7b_lorar8_ep6_framethinker
 
 # framethinker_coldstart_lora
-EXP=framethinker_coldstart_lora \
-ray_job_submit \
-  --skip-exists \
+EXP=framethinker_coldstart_lora_1110 \
+ray_job_submit --skip-exists --no-wait --submission-id $EXP \
   --runtime-env runtime_env.yaml \
-  --submission-id $EXP \
-  --no-wait \
   -- bash -c "
     EXP_NAME=$EXP \
-    MODEL_PATH=/mnt/amlfs-02/shared/checkpoints/jingwang/video_reason/sft/qwen2_5vl_7b_lorar8_framethinker \
+    MODEL_PATH=$CKPT_LORA \
     bash examples/agent/train_frame_thinker_vhonly.sh
   "
 
-EXP=framethinker_coldstart_ep6lora \
-ray_job_submit \
-  --skip-exists \
+EXP=framethinker_coldstart_ep6lora_1110 \
+ray_job_submit --skip-exists --no-wait --submission-id $EXP \
   --runtime-env runtime_env.yaml \
-  --submission-id $EXP \
-  --no-wait \
   -- bash -c "
     EXP_NAME=$EXP \
-    MODEL_PATH=/mnt/amlfs-02/shared/checkpoints/jingwang/video_reason/sft/qwen2_5vl_7b_lorar8_ep6_framethinker \
+    MODEL_PATH=$CKPT_LORA_EP6 \
+    bash examples/agent/train_frame_thinker_vhonly.sh"
+
+EXP=framethinker_coldstart_full_1110 \
+ray_job_submit --skip-exists --no-wait --submission-id $EXP \
+  --runtime-env runtime_env.yaml \
+  -- bash -c "
+    EXP_NAME=$EXP \
+    MODEL_PATH=$CKPT_FULL \
     bash examples/agent/train_frame_thinker_vhonly.sh
   "
 
-EXP=framethinker_coldstart_full \
-ray_job_submit \
-  --skip-exists \
+EXP=framethinker_coldstart_full_rpseq16k_1110 \
+ray_job_submit --skip-exists --no-wait --submission-id $EXP \
   --runtime-env runtime_env.yaml \
-  --submission-id $EXP \
-  --no-wait \
   -- bash -c "
     EXP_NAME=$EXP \
-    MODEL_PATH=/mnt/amlfs-02/shared/checkpoints/jingwang/video_reason/sft/qwen2_5vl_7b_full_framethinker_sft \
-    bash examples/agent/train_frame_thinker_vhonly.sh
-  "
-
-EXP=framethinker_coldstart_full_rolln16 \
-ray_job_submit \
-  --skip-exists \
-  --runtime-env runtime_env.yaml \
-  --submission-id $EXP \
-  --no-wait \
-  -- bash -c "
-    EXP_NAME=$EXP \
-    MODEL_PATH=/mnt/amlfs-02/shared/checkpoints/jingwang/video_reason/sft/qwen2_5vl_7b_full_framethinker_sft \
+    MODEL_PATH=$CKPT_FULL \
     bash examples/agent/train_frame_thinker_vhonly.sh \
-    actor_rollout_ref.rollout.n=16
+    data.max_response_length=16384
   "
 
