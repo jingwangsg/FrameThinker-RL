@@ -21,6 +21,7 @@ ray_job_submit --skip-exists --no-wait --submission-id $EXP \
     VAL_FILES=$VHTEST,$LVRTEST,$VIDEOMMMU_MCQ,$MMVU,$VSIBENCH_MCQ \
     bash examples/agent/train_frame_thinker.sh \
     data.message_template=framethinker_default \
+    actor_rollout_ref.rollout.tensor_model_parallel_size=4 \
     trainer.test_freq=50
   "
 
@@ -34,7 +35,8 @@ ray_job_submit --skip-exists --no-wait --submission-id $EXP \
     VAL_FILES=$VHTEST,$LVRTEST,$VIDEOMMMU_MCQ,$MMVU,$VSIBENCH_MCQ \
     bash examples/agent/train_frame_thinker.sh \
     data.message_template=framethinker_default \
-    trainer.test_freq=50
+    actor_rollout_ref.rollout.tensor_model_parallel_size=4 \
+    trainer.test_freq=20
   "
 
 
@@ -49,36 +51,36 @@ ray_job_submit --skip-exists --no-wait --submission-id $EXP \
     VAL_FILES=$VHTEST,$LVRTEST,$VIDEOMMMU_MCQ,$MMVU,$VSIBENCH_MCQ \
     bash examples/agent/train_frame_thinker.sh \
     data.message_template=framethinker_add_zoomin \
-    trainer.test_freq=50
+    actor_rollout_ref.rollout.tensor_model_parallel_size=4 \
+    trainer.test_freq=20
   "
 
-EXP=framethinker_coldstart_full_rpseq16k_vh+lvr10k_1112 \
-ray_job_submit --skip-exists --no-wait --submission-id $EXP \
-  --runtime-env runtime_env.yaml \
-  -- bash -c "
-    EXP_NAME=$EXP \
-    MODEL_PATH=$CKPT_FULL \
-    TRAIN_FILES=$VH,$LVR10K \
-    VAL_FILES=$VHTEST,$LVRTEST,$VIDEOMMMU_MCQ,$MMVU,$VSIBENCH_MCQ \
-    bash examples/agent/train_frame_thinker.sh \
-    data.message_template=framethinker_add_zoomin \
-    data.max_response_length=16384 \
-    trainer.test_freq=50
-  "
+# EXP=framethinker_coldstart_full_rpseq16k_vh+lvr10k_1112 \
+# ray_job_submit --skip-exists --no-wait --submission-id $EXP \
+#   --runtime-env runtime_env.yaml \
+#   -- bash -c "
+#     EXP_NAME=$EXP \
+#     MODEL_PATH=$CKPT_FULL \
+#     TRAIN_FILES=$VH,$LVR10K \
+#     VAL_FILES=$VHTEST,$LVRTEST,$VIDEOMMMU_MCQ,$MMVU,$VSIBENCH_MCQ \
+#     bash examples/agent/train_frame_thinker.sh \
+#     data.message_template=framethinker_add_zoomin \
+#     data.max_response_length=16384 \
+#     actor_rollout_ref.rollout.tensor_model_parallel_size=4 \
+#     trainer.test_freq=20
+#   "
 
-EXP=framethinker_coldstart_full_vh+lvr3k_bsz32_1112 \
-ray_job_submit --skip-exists --no-wait --submission-id $EXP \
-  --runtime-env runtime_env.yaml \
-  -- bash -c "
-    EXP_NAME=$EXP \
-    MODEL_PATH=$CKPT_FULL \
-    TRAIN_FILES=$VH,$LVR3K \
-    VAL_FILES=$VHTEST,$LVRTEST,$VIDEOMMMU_MCQ,$MMVU,$VSIBENCH_MCQ \
-    bash examples/agent/train_frame_thinker.sh \
-    data.message_template=framethinker_default \
-    data.train_batch_size=32 \
-    actor_rollout_ref.actor.ppo_mini_batch_size=32 \
-    trainer.nnodes=1 \
-    trainer.test_freq=50
-  "
-
+# EXP=framethinker_coldstart_full_rpseq16k_toolv2_vh+lvr10k_1112 \
+# ray_job_submit --skip-exists --no-wait --submission-id $EXP \
+#   --runtime-env runtime_env.yaml \
+#   -- bash -c "
+#     EXP_NAME=$EXP \
+#     MODEL_PATH=$CKPT_FULL \
+#     TRAIN_FILES=$VH,$LVR10K \
+#     VAL_FILES=$VHTEST,$LVRTEST,$VIDEOMMMU_MCQ,$MMVU,$VSIBENCH_MCQ \
+#     bash examples/agent/train_frame_thinker.sh \
+#     data.message_template=framethinker_add_zoomin \
+#     data.max_response_length=16384 \
+#     actor_rollout_ref.rollout.tensor_model_parallel_size=4 \
+#     trainer.test_freq=20
+#   "

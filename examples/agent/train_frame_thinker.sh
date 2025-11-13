@@ -10,6 +10,8 @@ MODEL_PATH=${MODEL_PATH:-Qwen/Qwen2.5-VL-7B-Instruct}
 TRAIN_FILES=${TRAIN_FILES:-/mnt/amlfs-02/shared/datasets/s3/video_reason/Video-Holmes/train.parquet}
 VAL_FILES=${VAL_FILES:-/mnt/amlfs-02/shared/datasets/s3/video_reason/Video-Holmes/test.parquet}
 
+
+
 PYTHONUNBUFFERED=1  python3 -m verl.trainer.main_ppo \
     "data.train_files=[${TRAIN_FILES}]" \
     "data.val_files=[${VAL_FILES}]" \
@@ -18,7 +20,7 @@ PYTHONUNBUFFERED=1  python3 -m verl.trainer.main_ppo \
     data.max_response_length=8192 \
     data.media_dir=/mnt/amlfs-02/shared/datasets/s3/video_reason/ \
     data.return_raw_chat=True \
-    data.filter_overlong_prompts=True \
+    data.filter_overlong_prompts=False \
     data.dataloader_num_workers=8 \
     data.message_template=framethinker_default \
     algorithm.adv_estimator=grpo \
@@ -42,15 +44,15 @@ PYTHONUNBUFFERED=1  python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.enforce_eager=False \
     actor_rollout_ref.rollout.free_cache_engine=False \
     actor_rollout_ref.rollout.enable_chunked_prefill=False \
-    actor_rollout_ref.actor.fsdp_config.param_offload=True \
-    actor_rollout_ref.actor.fsdp_config.optimizer_offload=True \
+    actor_rollout_ref.actor.fsdp_config.param_offload=False \
+    actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=2 \
-    actor_rollout_ref.ref.fsdp_config.param_offload=True \
+    actor_rollout_ref.ref.fsdp_config.param_offload=False \
     actor_rollout_ref.rollout.agent.activate_agent=True \
     actor_rollout_ref.rollout.agent.tool_name_key=env_name \
     actor_rollout_ref.rollout.agent.single_response_max_tokens=8192 \
     actor_rollout_ref.rollout.agent.max_turns=5 \
-    actor_rollout_ref.rollout.agent.concurrent_workers=1 \
+    actor_rollout_ref.rollout.agent.concurrent_workers=8 \
     actor_rollout_ref.rollout.agent.show_tqdm=True \
     actor_rollout_ref.rollout.agent.max_vllm_images=128 \
     trainer.critic_warmup=0 \
