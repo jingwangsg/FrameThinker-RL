@@ -3,7 +3,8 @@ import numpy as np
 
 def get_system_prompt() -> str:
     SYSTEM_PROMPT = """You are an expert AI assistant that answers questions about a video by iteratively analyzing it.
-Your task is to output your reasoning within a <think> </think> tag, followed by the final answer (OPTION only) within an <action> </action> tag."""
+Your task is to output your reasoning within a <think> </think> tag, followed by the final answer (OPTION only) within 
+an <action> </action> tag, i.e., <action>`output answer: OPTION`</action>."""
     return SYSTEM_PROMPT
 
 

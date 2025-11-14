@@ -34,7 +34,7 @@ PYTHONUNBUFFERED=1  python3 -m verl.trainer.main_ppo \
     data.max_response_length=8192 \
     data.media_dir=${MEDIA_DIA} \
     data.return_raw_chat=True \
-    data.filter_overlong_prompts=False \
+    data.filter_overlong_prompts=True \
     data.dataloader_num_workers=8 \
     data.message_template=default \
     algorithm.adv_estimator=grpo \
@@ -81,6 +81,4 @@ PYTHONUNBUFFERED=1  python3 -m verl.trainer.main_ppo \
     +trainer.tensorboard_dir=${SAVE_CHECKPOINT_DIR}/logs/tensorboard \
     +trainer.rl_logging_board_dir=${SAVE_CHECKPOINT_DIR}/logs/rl_logging_board \
     trainer.total_epochs=20 \
-    custom_reward_function.path=verl/utils/reward_score/think_with_video_reward.py \
-    custom_reward_function.name=compute_score \
     $@
