@@ -29,6 +29,7 @@ PYTHONUNBUFFERED=1  python3 -m verl.trainer.main_ppo \
     "data.train_files=[${TRAIN_FILES}]" \
     "data.val_files=[${VAL_FILES}]" \
     data.train_batch_size=32 \
+    data.val_batch_size=64 \
     data.max_prompt_length=8192 \
     data.max_response_length=8192 \
     data.media_dir=${MEDIA_DIA} \
