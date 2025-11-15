@@ -28,6 +28,7 @@ from transformers import PreTrainedTokenizer, ProcessorMixin
 import verl.utils.torch_functional as verl_F
 from verl.utils.model import compute_position_id_with_mask
 from verl.utils.dataset.templates import get_message_template
+from verl.utils.dataset.vision_utils import extract_frames
 
 
 def collate_fn(data_list: list[dict]) -> dict:
@@ -155,7 +156,7 @@ class RLHFDataset(Dataset):
 
         message_template_name = self.config.get("message_template", "default")
         apply_message_template = get_message_template(message_template_name)
-        messages = apply_message_template(messages, **example)
+        messages = apply_message_template(messages, config=self.config, **example)
 
         # print(messages)
 
@@ -180,7 +181,6 @@ class RLHFDataset(Dataset):
         Note that we also return the raw_input_ids so that it can be combined with other chat template
         """
         row_dict: dict = self.dataframe[item]
-        messages = self._build_messages(row_dict)
         model_inputs = {}
 
         if self.processor is not None:
@@ -190,20 +190,34 @@ class RLHFDataset(Dataset):
                 process_video,
             )
 
-            raw_prompt = self.processor.apply_chat_template(
-                messages, add_generation_prompt=True, tokenize=False
-            )
             multi_modal_data = {}
             origin_multi_modal_data = {}
 
             images = None
             if self.image_key in row_dict:
-                origin_images = [
-                    process_raw_image(image) for image in row_dict.get(self.image_key)
-                ]
-                images = [
-                    process_image(image) for image in row_dict.pop(self.image_key)
-                ]
+                if getattr(self.config, "video_reading_kwargs", None) is not None:
+                    video_reading_kwargs = self.config.video_reading_kwargs
+                    assert (
+                        video_reading_kwargs["sampling_mode"] == "uniform"
+                    ), "Only uniform sampling mode is supported for now"
+
+                    num_frames = video_reading_kwargs["num_frames"]
+
+                    video_path = row_dict["video_path"]
+                    if (
+                        hasattr(self.config, "media_dir")
+                        and self.config.media_dir is not None
+                    ):
+                        video_path = os.path.join(self.config.media_dir, video_path)
+
+                    images_pil, frame_indices = extract_frames(
+                        video_path=video_path, num_frames=num_frames
+                    )
+                else:
+                    images_pil = row_dict.pop(self.image_key)
+
+                origin_images = [process_raw_image(image) for image in images_pil]
+                images = [process_image(image) for image in images_pil]
                 multi_modal_data["image"] = images
                 origin_multi_modal_data["image"] = origin_images
 
@@ -213,6 +227,12 @@ class RLHFDataset(Dataset):
                     process_video(video) for video in row_dict.pop(self.video_key)
                 ]
                 multi_modal_data["video"] = [video.numpy() for video in videos]
+
+            messages = self._build_messages(row_dict)
+
+            raw_prompt = self.processor.apply_chat_template(
+                messages, add_generation_prompt=True, tokenize=False
+            )
 
             model_inputs = self.processor(
                 text=[raw_prompt], images=images, videos=videos, return_tensors="pt"
@@ -233,6 +253,7 @@ class RLHFDataset(Dataset):
             row_dict["multi_modal_inputs"].pop("second_per_grid_ts", None)
 
         else:
+            messages = self._build_messages(row_dict)
             raw_prompt = self.tokenizer.apply_chat_template(
                 messages, add_generation_prompt=True, tokenize=False
             )
@@ -334,6 +355,7 @@ class RLHFDataset(Dataset):
             row_dict["total_frames"] = extra_info.get("total_frames", 0)
             row_dict["height"] = extra_info.get("height", 0)
             row_dict["width"] = extra_info.get("width", 0)
+        
         return row_dict
 
     def __getstate__(self):

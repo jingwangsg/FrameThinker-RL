@@ -18,14 +18,16 @@ def get_image_placeholders(num_frames: int, total_frames: int) -> str:
     return "\n".join([f"frame {idx}:<image>" for idx in frame_indices])
 
 
-def apply_message_template(messages, **kwargs):
+def apply_message_template(messages, config, **kwargs):
     assert (
         messages[0]["role"] != "system"
     ), "System message should not be applied to the message template"
 
     assert len(messages) == 1, "Only one message is allowed"
 
-    total_frames = kwargs["extra_info"]["total_frames"]
+    # total_frames = kwargs["extra_info"]["total_frames"]
+    total_frames = config.data.video_reading_kwargs.num_frames
+
     images = kwargs["images"]
 
     image_placeholders = get_image_placeholders(num_frames=len(images), total_frames=total_frames)

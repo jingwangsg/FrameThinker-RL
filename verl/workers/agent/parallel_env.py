@@ -210,6 +210,7 @@ def agent_rollout_loop(
             break
         
         active_indices = [idx for idx, is_active in enumerate(active_mask) if is_active]
+        breakpoint()
         active_vllm_inputs = [
             vinput
             for vinput, is_active in zip(vllm_input_list, active_mask)

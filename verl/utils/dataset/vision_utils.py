@@ -18,7 +18,23 @@ from typing import Optional, Union
 import torch
 from PIL import Image
 from qwen_vl_utils import fetch_image, fetch_video
+from torchcodec.decoders import VideoDecoder
+import numpy as np
+from einops import rearrange
 
+
+def extract_frames(video_path: str, num_frames: int = 8) -> list[dict]:
+    decoder = VideoDecoder(video_path, num_ffmpeg_threads=0)
+    total_frames = decoder.metadata.num_frames
+
+    # Calculate frame indices (evenly spaced, excluding last frame)
+    frame_indices = np.linspace(0, total_frames - 1, num_frames, dtype=int).tolist()
+
+    frames = decoder.get_frames_at(frame_indices).data
+    frames = rearrange(frames, 't c h w -> t h w c').cpu().numpy()
+    frames_pil = [Image.fromarray(frame) for frame in frames]
+
+    return frames_pil, frame_indices
 
 def process_raw_image(image: dict):
     from PIL import Image

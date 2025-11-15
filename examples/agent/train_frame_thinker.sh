@@ -3,7 +3,7 @@ set -x
 BASE_DATA_DIR=/mnt/amlfs-02/shared/datasets/s3/video_reason/Video-Holmes
 PROJECT_NAME=video_holmes_rl
 EXP_NAME=${EXP_NAME:-framethinker_baseline}
-SAVE_CHECKPOINT_DIR=/mnt/amlfs-02/shared/checkpoints/jingwang/video_reason/
+SAVE_CHECKPOINT_DIR=/mnt/amlfs-02/shared/datasets/checkpoints/jingwang/video_reason/
 MODEL_PATH=${MODEL_PATH:-Qwen/Qwen2.5-VL-7B-Instruct}
 
 
