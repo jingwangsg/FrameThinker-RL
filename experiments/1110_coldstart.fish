@@ -39,3 +39,13 @@ ray_job_submit --skip-exists --no-wait --submission-id $EXP \
     data.max_response_length=16384
   "
 
+EXP=framethinker_coldstart_full_ep20_1110 \
+ray_job_submit --skip-exists --no-wait --submission-id $EXP \
+  --runtime-env runtime_env.yaml \
+  -- bash -c "
+    EXP_NAME=$EXP \
+    MODEL_PATH=$CKPT_FULL \
+    bash examples/agent/train_frame_thinker_vhonly.sh \
+    trainer.total_epochs=20
+  "
+

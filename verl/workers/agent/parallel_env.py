@@ -357,6 +357,9 @@ def agent_rollout_loop(
                 or len(vllm_input_list[idx]["prompt_token_ids"]) >= max_total_length
             ):
                 active_mask[idx] = False
+        
+    max_token_length = max([(running_states[idx] != tokenizer.pad_token_id).sum() for idx in range(batch_size)])
+    print(f"[Agent Loop] max token length: {max_token_length}")
 
     env.close()
     target_device = prompts.batch["input_ids"].device
