@@ -3,7 +3,7 @@ EXP=framethinker_baseline_1109 \
 ray_job_submit \
   --skip-exists \
   --submission-id $EXP\
-  --runtime-env runtime_env.yaml \
+  --runtime-env ../runtime_env.yaml \
   --no-wait \
   -- bash -c "
     EXP_NAME=$EXP \
@@ -15,7 +15,7 @@ EXP=framethinker_baseline_ep20_1109 \
 ray_job_submit \
   --skip-exists \
   --submission-id $EXP \
-  --runtime-env runtime_env.yaml \
+  --runtime-env ../runtime_env.yaml \
   --no-wait \
   -- bash -c "
     EXP_NAME=$EXP \
@@ -27,7 +27,7 @@ EXP=framethinker_baseline_ep20_rpseq16k_1109 \
 ray_job_submit \
   --skip-exists \
   --submission-id $EXP \
-  --runtime-env runtime_env.yaml \
+  --runtime-env ../runtime_env.yaml \
   --no-wait \
   -- bash -c "
     EXP_NAME=$EXP \

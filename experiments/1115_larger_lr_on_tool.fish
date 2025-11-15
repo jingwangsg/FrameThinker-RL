@@ -1,6 +1,6 @@
 EXP=framethinker_coldstart_full_toolv2_lr3e-6_1110 \
 ray_job_submit --skip-exists --no-wait --submission-id $EXP \
-  --runtime-env runtime_env.yaml \
+  --runtime-env ../runtime_env.yaml \
   -- bash -c "
     EXP_NAME=$EXP \
     MODEL_PATH=/mnt/amlfs-02/shared/checkpoints/jingwang/video_reason/sft/qwen2_5vl_7b_full_framethinker_sft \
@@ -12,7 +12,7 @@ ray_job_submit --skip-exists --no-wait --submission-id $EXP \
 
 EXP=framethinker_coldstart_full_toolv2_lr5e-6_1110 \
 ray_job_submit --skip-exists --no-wait --submission-id $EXP \
-  --runtime-env runtime_env.yaml \
+  --runtime-env ../runtime_env.yaml \
   -- bash -c "
     EXP_NAME=$EXP \
     MODEL_PATH=/mnt/amlfs-02/shared/checkpoints/jingwang/video_reason/sft/qwen2_5vl_7b_full_framethinker_sft \
@@ -24,7 +24,7 @@ ray_job_submit --skip-exists --no-wait --submission-id $EXP \
 
 EXP=framethinker_coldstart_full_lr3e-6_1110 \
 ray_job_submit --skip-exists --no-wait --submission-id $EXP \
-  --runtime-env runtime_env.yaml \
+  --runtime-env ../runtime_env.yaml \
   -- bash -c "
     EXP_NAME=$EXP \
     MODEL_PATH=$CKPT_FULL \
@@ -34,7 +34,7 @@ ray_job_submit --skip-exists --no-wait --submission-id $EXP \
 
 EXP=framethinker_coldstart_full_lr5e-6_1110 \
 ray_job_submit --skip-exists --no-wait --submission-id $EXP \
-  --runtime-env runtime_env.yaml \
+  --runtime-env ../runtime_env.yaml \
   -- bash -c "
     EXP_NAME=$EXP \
     MODEL_PATH=$CKPT_FULL \

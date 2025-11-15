@@ -14,7 +14,7 @@ set VSIBENCH_MCQ $DATA_DIR/BENCHMARKS/vsibench_mcq.parquet
 
 EXP=framethinker_baseline_vh+lvr10k_1112 \
 ray_job_submit --skip-exists --no-wait --submission-id $EXP \
-  --runtime-env runtime_env.yaml \
+  --runtime-env ../runtime_env.yaml \
   -- bash -c "
     EXP_NAME=$EXP \
     TRAIN_FILES=$VH,$LVR10K \
@@ -27,7 +27,7 @@ ray_job_submit --skip-exists --no-wait --submission-id $EXP \
 
 # EXP=framethinker_coldstart_full_vh+lvr10k_1112 \
 # ray_job_submit --skip-exists --no-wait --submission-id $EXP \
-#   --runtime-env runtime_env.yaml \
+#   --runtime-env ../runtime_env.yaml \
 #   -- bash -c "
 #     EXP_NAME=$EXP \
 #     MODEL_PATH=$CKPT_FULL \
@@ -41,7 +41,7 @@ ray_job_submit --skip-exists --no-wait --submission-id $EXP \
 
 EXP=framethinker_coldstart_full_vh+lvr3k_1112 \
 ray_job_submit --skip-exists --no-wait --submission-id $EXP \
-  --runtime-env runtime_env.yaml \
+  --runtime-env ../runtime_env.yaml \
   -- bash -c "
     EXP_NAME=$EXP \
     MODEL_PATH=$CKPT_FULL \
@@ -55,7 +55,7 @@ ray_job_submit --skip-exists --no-wait --submission-id $EXP \
 
 EXP=framethinker_coldstart_full_lr1e-6_vh+lvr3k_1112 \
 ray_job_submit --skip-exists --no-wait --submission-id $EXP \
-  --runtime-env runtime_env.yaml \
+  --runtime-env ../runtime_env.yaml \
   -- bash -c "
     EXP_NAME=$EXP \
     MODEL_PATH=$CKPT_FULL \
@@ -72,7 +72,7 @@ ray_job_submit --skip-exists --no-wait --submission-id $EXP \
 # framethinker_coldstart_full_toolv2
 EXP=framethinker_coldstart_full_toolv2_lr1e-6_vh+lvr10k_1112 \
 ray_job_submit --skip-exists --no-wait --submission-id $EXP \
-  --runtime-env runtime_env.yaml \
+  --runtime-env ../runtime_env.yaml \
   -- bash -c "
     EXP_NAME=$EXP \
     MODEL_PATH=$CKPT_FULL \
@@ -87,7 +87,7 @@ ray_job_submit --skip-exists --no-wait --submission-id $EXP \
 
 # EXP=framethinker_coldstart_full_rpseq16k_vh+lvr10k_1112 \
 # ray_job_submit --skip-exists --no-wait --submission-id $EXP \
-#   --runtime-env runtime_env.yaml \
+#   --runtime-env ../runtime_env.yaml \
 #   -- bash -c "
 #     EXP_NAME=$EXP \
 #     MODEL_PATH=$CKPT_FULL \
@@ -102,7 +102,7 @@ ray_job_submit --skip-exists --no-wait --submission-id $EXP \
 
 # EXP=framethinker_coldstart_full_rpseq16k_toolv2_vh+lvr10k_1112 \
 # ray_job_submit --skip-exists --no-wait --submission-id $EXP \
-#   --runtime-env runtime_env.yaml \
+#   --runtime-env ../runtime_env.yaml \
 #   -- bash -c "
 #     EXP_NAME=$EXP \
 #     MODEL_PATH=$CKPT_FULL \
