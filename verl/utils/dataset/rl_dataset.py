@@ -195,7 +195,9 @@ class RLHFDataset(Dataset):
 
             images = None
             if self.image_key in row_dict:
-                if getattr(self.config, "video_reading_kwargs", None) is not None:
+                # is video and video_reading_kwargs is not None, then extract frames dynamically
+                # for image, we only have image_path (or none)
+                if getattr(self.config, "video_reading_kwargs", None) is not None and "video_path" in row_dict:
                     video_reading_kwargs = self.config.video_reading_kwargs
                     assert (
                         video_reading_kwargs["sampling_mode"] == "uniform"
@@ -213,6 +215,7 @@ class RLHFDataset(Dataset):
                     images_pil, frame_indices = extract_frames(
                         video_path=video_path, num_frames=num_frames
                     )
+                    row_dict["images"] = images_pil
                 else:
                     images_pil = row_dict.pop(self.image_key)
 
