@@ -22,9 +22,10 @@ data:
   custom_cls:
       path: null
       name: null
-  video_reading_kwargs:
+  media_reading_kwargs:
     sampling_mode: uniform
     num_frames: 8
+    size: 360
 
 actor_rollout_ref:
   hybrid_engine: True

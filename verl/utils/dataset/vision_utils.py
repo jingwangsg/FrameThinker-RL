@@ -21,9 +21,18 @@ from qwen_vl_utils import fetch_image, fetch_video
 from torchcodec.decoders import VideoDecoder
 import numpy as np
 from einops import rearrange
+from torchvision.transforms import Resize
 
+def compute_target_size(width: int, height: int, size: int) -> tuple[int, int]:
+    """
+    Compute target size for video frame resizing.
+    """
+    if width > height:
+        return size, int(size * height / width)
+    else:
+        return int(size * width / height), size
 
-def extract_frames(video_path: str, num_frames: int = 8) -> list[dict]:
+def extract_frames(video_path: str, num_frames: int = 8, size: int = 360) -> list[dict]:
     decoder = VideoDecoder(video_path, num_ffmpeg_threads=0)
     total_frames = decoder.metadata.num_frames
 
@@ -31,7 +40,9 @@ def extract_frames(video_path: str, num_frames: int = 8) -> list[dict]:
     frame_indices = np.linspace(0, total_frames - 1, num_frames, dtype=int).tolist()
 
     frames = decoder.get_frames_at(frame_indices).data
+    frames = Resize(size)(frames)
     frames = rearrange(frames, 't c h w -> t h w c').cpu().numpy()
+
     frames_pil = [Image.fromarray(frame) for frame in frames]
 
     return frames_pil, frame_indices

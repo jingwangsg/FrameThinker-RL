@@ -163,7 +163,7 @@ def process_single_sample(
         video_meta = get_video_metadata(abs_video_path)
 
         # Extract frames
-        frames, frame_indices = extract_frames(abs_video_path, num_frames=num_frames)
+        # frames, frame_indices = extract_frames(abs_video_path, num_frames=num_frames)
 
         # Build prompt with actual frame indices
         question = example["question"]
@@ -195,9 +195,10 @@ def process_single_sample(
         return {
             "data_source": data_source,
             "prompt": prompt,
-            "images": frames,
+            # "images": frames,
             "ability": "vl_video_reasoning",
             "env_name": "think_with_video",
+            "video_path": video_path,
             "reward_model": {"ground_truth": ground_truth, "style": "rule"},
             "ground_truth": ground_truth,
             "question_type": example.get("question_type", "mcq"),
@@ -221,7 +222,6 @@ def get_empty_sample_schema():
         "_skip": True,
         "data_source": "",
         "prompt": [],
-        "images": [],
         "ability": "",
         "env_name": "",
         "reward_model": {},

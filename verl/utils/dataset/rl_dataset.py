@@ -28,25 +28,30 @@ from transformers import PreTrainedTokenizer, ProcessorMixin
 import verl.utils.torch_functional as verl_F
 from verl.utils.model import compute_position_id_with_mask
 from verl.utils.dataset.templates import get_message_template
-from verl.utils.dataset.vision_utils import extract_frames
+from verl.utils.dataset.vision_utils import extract_frames, compute_target_size
+
+from PIL import Image
 
 
 def collate_fn(data_list: list[dict]) -> dict:
     tensors = defaultdict(list)
     non_tensors = defaultdict(list)
 
-    for data in data_list:
-        for key, val in data.items():
-            if isinstance(val, torch.Tensor):
-                tensors[key].append(val)
-            else:
-                non_tensors[key].append(val)
+    try:
+        for data in data_list:
+            for key, val in data.items():
+                if isinstance(val, torch.Tensor):
+                    tensors[key].append(val)
+                else:
+                    non_tensors[key].append(val)
 
-    for key, val in tensors.items():
-        tensors[key] = torch.stack(val, dim=0)
+        for key, val in tensors.items():
+            tensors[key] = torch.stack(val, dim=0)
 
-    for key, val in non_tensors.items():
-        non_tensors[key] = np.array(val, dtype=object)
+        for key, val in non_tensors.items():
+            non_tensors[key] = np.array(val, dtype=object)
+    except Exception as e:
+        breakpoint()
 
     return {**tensors, **non_tensors}
 
@@ -194,35 +199,50 @@ class RLHFDataset(Dataset):
             origin_multi_modal_data = {}
 
             images = None
+            images_pil = None
             if self.image_key in row_dict:
                 # is video and video_reading_kwargs is not None, then extract frames dynamically
                 # for image, we only have image_path (or none)
-                if getattr(self.config, "video_reading_kwargs", None) is not None and "video_path" in row_dict:
-                    video_reading_kwargs = self.config.video_reading_kwargs
+                if getattr(self.config, "media_reading_kwargs", None) is not None:
+                    media_reading_kwargs = self.config.media_reading_kwargs
                     assert (
-                        video_reading_kwargs["sampling_mode"] == "uniform"
+                        media_reading_kwargs["sampling_mode"] == "uniform"
                     ), "Only uniform sampling mode is supported for now"
 
-                    num_frames = video_reading_kwargs["num_frames"]
+                    size = media_reading_kwargs.get("size", 360)
 
-                    video_path = row_dict["video_path"]
-                    if (
-                        hasattr(self.config, "media_dir")
-                        and self.config.media_dir is not None
-                    ):
-                        video_path = os.path.join(self.config.media_dir, video_path)
+                    if "video_path" in row_dict:
+                        num_frames = media_reading_kwargs["num_frames"]
 
-                    images_pil, frame_indices = extract_frames(
-                        video_path=video_path, num_frames=num_frames
-                    )
+                        video_path = row_dict["video_path"]
+                        if (
+                            hasattr(self.config, "media_dir")
+                            and self.config.media_dir is not None
+                        ):
+                            video_path = os.path.join(self.config.media_dir, video_path)
+
+                        images_pil, frame_indices = extract_frames(
+                            video_path=video_path, num_frames=num_frames, size=size,
+                        )
+                    elif "image_path" in row_dict:
+                        image_path = row_dict["image_path"]
+                        if (
+                            hasattr(self.config, "media_dir")
+                            and self.config.media_dir is not None
+                        ):
+                            image_path = os.path.join(self.config.media_dir, image_path)
+                        image_pil = Image.open(image_path).convert("RGB")
+                        width, height = image_pil.size
+                        target_size = compute_target_size(width=width, height=height, size=size)
+                        if width != target_size[0] or height != target_size[1]:
+                            image_pil = image_pil.resize(target_size)
+                        images_pil = [image_pil.convert("RGB")]
+                    else:
+                        raise ValueError(f"No image path found in row_dict: {row_dict}")
+                    
                     row_dict["images"] = images_pil
-                else:
-                    images_pil = row_dict.pop(self.image_key)
-
-                origin_images = [process_raw_image(image) for image in images_pil]
-                images = [process_image(image) for image in images_pil]
-                multi_modal_data["image"] = images
-                origin_multi_modal_data["image"] = origin_images
+            
+            assert images_pil is not None, "No images found in row_dict: {row_dict}"
 
             videos = None
             if self.video_key in row_dict:
@@ -246,6 +266,9 @@ class RLHFDataset(Dataset):
 
             if "second_per_grid_ts" in model_inputs:
                 model_inputs.pop("second_per_grid_ts")
+
+            origin_multi_modal_data["image"] = [process_raw_image(image) for image in images_pil]
+            multi_modal_data["image"] = [process_image(image) for image in images_pil]
 
             # There's a trap here, multi_modal_inputs has to be a dict, not BatchFeature
             row_dict["origin_multi_modal_data"] = origin_multi_modal_data
