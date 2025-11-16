@@ -30,11 +30,11 @@ def apply_message_template(messages, **kwargs):
     assert len(messages) == 1, "Only one message is allowed"
 
     total_frames = kwargs["extra_info"]["total_frames"]
-    images = kwargs["images"]
-    is_video = len(images) > 1
+    num_frames = len(kwargs["multi_modal_data"]["image"])
+    is_video = num_frames > 1
 
     if is_video:
-        image_placeholders = get_image_placeholders(num_frames=len(images), total_frames=total_frames)
+        image_placeholders = get_image_placeholders(num_frames=num_frames, total_frames=total_frames)
     else:
         image_placeholders = "<image>"
 

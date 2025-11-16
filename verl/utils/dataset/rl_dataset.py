@@ -37,21 +37,18 @@ def collate_fn(data_list: list[dict]) -> dict:
     tensors = defaultdict(list)
     non_tensors = defaultdict(list)
 
-    try:
-        for data in data_list:
-            for key, val in data.items():
-                if isinstance(val, torch.Tensor):
-                    tensors[key].append(val)
-                else:
-                    non_tensors[key].append(val)
+    for data in data_list:
+        for key, val in data.items():
+            if isinstance(val, torch.Tensor):
+                tensors[key].append(val)
+            else:
+                non_tensors[key].append(val)
 
-        for key, val in tensors.items():
-            tensors[key] = torch.stack(val, dim=0)
+    for key, val in tensors.items():
+        tensors[key] = torch.stack(val, dim=0)
 
-        for key, val in non_tensors.items():
-            non_tensors[key] = np.array(val, dtype=object)
-    except Exception as e:
-        breakpoint()
+    for key, val in non_tensors.items():
+        non_tensors[key] = np.array(val, dtype=object)
 
     return {**tensors, **non_tensors}
 
@@ -238,10 +235,9 @@ class RLHFDataset(Dataset):
                             image_pil = image_pil.resize(target_size)
                         images_pil = [image_pil.convert("RGB")]
                     else:
-                        raise ValueError(f"No image path found in row_dict: {row_dict}")
-                    
-                    row_dict["images"] = images_pil
+                        images_pil = row_dict.get(self.image_key)
             
+                    
             assert images_pil is not None, "No images found in row_dict: {row_dict}"
 
             videos = None
@@ -251,8 +247,19 @@ class RLHFDataset(Dataset):
                 ]
                 multi_modal_data["video"] = [video.numpy() for video in videos]
 
-            messages = self._build_messages(row_dict)
 
+            origin_multi_modal_data["image"] = [process_raw_image(image) for image in images_pil]
+            multi_modal_data["image"] = [process_image(image) for image in images_pil]
+
+            # There's a trap here, multi_modal_inputs has to be a dict, not BatchFeature
+            row_dict["origin_multi_modal_data"] = origin_multi_modal_data
+            row_dict["multi_modal_data"] = multi_modal_data
+            row_dict["multi_modal_inputs"] = dict(model_inputs)
+
+            # second_per_grid_ts isn't used for training, just for mrope
+            row_dict["multi_modal_inputs"].pop("second_per_grid_ts", None)
+
+            messages = self._build_messages(row_dict)
             raw_prompt = self.processor.apply_chat_template(
                 messages, add_generation_prompt=True, tokenize=False
             )
@@ -267,16 +274,7 @@ class RLHFDataset(Dataset):
             if "second_per_grid_ts" in model_inputs:
                 model_inputs.pop("second_per_grid_ts")
 
-            origin_multi_modal_data["image"] = [process_raw_image(image) for image in images_pil]
-            multi_modal_data["image"] = [process_image(image) for image in images_pil]
 
-            # There's a trap here, multi_modal_inputs has to be a dict, not BatchFeature
-            row_dict["origin_multi_modal_data"] = origin_multi_modal_data
-            row_dict["multi_modal_data"] = multi_modal_data
-            row_dict["multi_modal_inputs"] = dict(model_inputs)
-
-            # second_per_grid_ts isn't used for training, just for mrope
-            row_dict["multi_modal_inputs"].pop("second_per_grid_ts", None)
 
         else:
             messages = self._build_messages(row_dict)
@@ -365,6 +363,12 @@ class RLHFDataset(Dataset):
         # encode prompts without chat template
         if self.return_raw_chat:
             row_dict["raw_prompt"] = messages
+        
+        if self.image_key in row_dict:
+            row_dict.pop(self.image_key)
+        
+        if self.video_key in row_dict:
+            row_dict.pop(self.video_key)
 
         # add index for each prompt
         index = row_dict.get("extra_info", {}).get("index", 0)
