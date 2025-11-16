@@ -26,7 +26,6 @@ def apply_message_template(messages, **kwargs):
     assert len(messages) == 1, "Only one message is allowed"
 
     total_frames = kwargs["extra_info"]["total_frames"]
-    images = kwargs["images"]
 
     num_frames = len(kwargs["multi_modal_data"]["image"])
 

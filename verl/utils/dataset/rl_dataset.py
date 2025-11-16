@@ -160,9 +160,8 @@ class RLHFDataset(Dataset):
         apply_message_template = get_message_template(message_template_name)
         messages = apply_message_template(messages, config=self.config, **example)
 
-        # print(messages)
-
-        if self.image_key in example or self.video_key in example:
+        # if self.image_key in example or self.video_key in example:
+        if "image" in example["multi_modal_data"] or "video" in example["multi_modal_data"]:
             for message in messages:
                 content = message["content"]
                 content_list = []
@@ -182,6 +181,7 @@ class RLHFDataset(Dataset):
         """
         Note that we also return the raw_input_ids so that it can be combined with other chat template
         """
+
         row_dict: dict = self.dataframe[item]
         model_inputs = {}
 
@@ -192,53 +192,72 @@ class RLHFDataset(Dataset):
                 process_video,
             )
 
+            images_pil = None
+
+            enable_dynamic_reading = getattr(self.config, "media_reading_kwargs", None) is not None
+            if enable_dynamic_reading:
+                media_reading_kwargs = self.config.media_reading_kwargs
+                assert (
+                    media_reading_kwargs["sampling_mode"] == "uniform"
+                ), "Only uniform sampling mode is supported for now"
+
+                size = media_reading_kwargs.get("size", 360)
+
+                if "video_path" in row_dict:
+                    num_frames = media_reading_kwargs["num_frames"]
+
+                    video_path = row_dict["video_path"]
+                    if (
+                        hasattr(self.config, "media_dir")
+                        and self.config.media_dir is not None
+                    ):
+                        video_path = os.path.join(self.config.media_dir, video_path)
+
+                    images_pil, frame_indices = extract_frames(
+                        video_path=video_path,
+                        num_frames=num_frames,
+                        size=size,
+                    )
+                elif "image_path" in row_dict:
+                    image_path = row_dict["image_path"]
+                    if (
+                        hasattr(self.config, "media_dir")
+                        and self.config.media_dir is not None
+                    ):
+                        image_path = os.path.join(self.config.media_dir, image_path)
+                    image_pil = Image.open(image_path).convert("RGB")
+                    width, height = image_pil.size
+                    target_size = compute_target_size(
+                        width=width, height=height, size=size
+                    )
+                    if width != target_size[0] or height != target_size[1]:
+                        image_pil = image_pil.resize(target_size)
+                    images_pil = [image_pil.convert("RGB")]
+                else:
+                    raise ValueError(
+                        f"Neither video_path nor image_path found in row_dict: {row_dict.keys()}"
+                    )
+
+                row_dict[self.image_key] = images_pil
+
+            assert (
+                row_dict[self.image_key] is not None
+            ), f"images_pil is None, row_dict keys: {row_dict.keys()}"
+
             multi_modal_data = {}
             origin_multi_modal_data = {}
 
             images = None
-            images_pil = None
+
             if self.image_key in row_dict:
                 # is video and video_reading_kwargs is not None, then extract frames dynamically
                 # for image, we only have image_path (or none)
-                if getattr(self.config, "media_reading_kwargs", None) is not None:
-                    media_reading_kwargs = self.config.media_reading_kwargs
-                    assert (
-                        media_reading_kwargs["sampling_mode"] == "uniform"
-                    ), "Only uniform sampling mode is supported for now"
+                images_pil = row_dict.pop(self.image_key)
+                images = [process_image(image) for image in images_pil]
+                origin_images = [process_raw_image(image) for image in images_pil]
 
-                    size = media_reading_kwargs.get("size", 360)
-
-                    if "video_path" in row_dict:
-                        num_frames = media_reading_kwargs["num_frames"]
-
-                        video_path = row_dict["video_path"]
-                        if (
-                            hasattr(self.config, "media_dir")
-                            and self.config.media_dir is not None
-                        ):
-                            video_path = os.path.join(self.config.media_dir, video_path)
-
-                        images_pil, frame_indices = extract_frames(
-                            video_path=video_path, num_frames=num_frames, size=size,
-                        )
-                    elif "image_path" in row_dict:
-                        image_path = row_dict["image_path"]
-                        if (
-                            hasattr(self.config, "media_dir")
-                            and self.config.media_dir is not None
-                        ):
-                            image_path = os.path.join(self.config.media_dir, image_path)
-                        image_pil = Image.open(image_path).convert("RGB")
-                        width, height = image_pil.size
-                        target_size = compute_target_size(width=width, height=height, size=size)
-                        if width != target_size[0] or height != target_size[1]:
-                            image_pil = image_pil.resize(target_size)
-                        images_pil = [image_pil.convert("RGB")]
-                    else:
-                        images_pil = row_dict.get(self.image_key)
-            
-                    
-            assert images_pil is not None, "No images found in row_dict: {row_dict}"
+                multi_modal_data["image"] = images
+                origin_multi_modal_data["image"] = origin_images
 
             videos = None
             if self.video_key in row_dict:
@@ -247,22 +266,20 @@ class RLHFDataset(Dataset):
                 ]
                 multi_modal_data["video"] = [video.numpy() for video in videos]
 
-
-            origin_multi_modal_data["image"] = [process_raw_image(image) for image in images_pil]
-            multi_modal_data["image"] = [process_image(image) for image in images_pil]
-
             # There's a trap here, multi_modal_inputs has to be a dict, not BatchFeature
             row_dict["origin_multi_modal_data"] = origin_multi_modal_data
             row_dict["multi_modal_data"] = multi_modal_data
-            row_dict["multi_modal_inputs"] = dict(model_inputs)
 
-            # second_per_grid_ts isn't used for training, just for mrope
-            row_dict["multi_modal_inputs"].pop("second_per_grid_ts", None)
 
             messages = self._build_messages(row_dict)
             raw_prompt = self.processor.apply_chat_template(
                 messages, add_generation_prompt=True, tokenize=False
             )
+
+            _num_images = len(row_dict["multi_modal_data"]["image"])
+            _num_origin_images = len(row_dict["origin_multi_modal_data"]["image"])
+            _num_image_tokens = raw_prompt.count("<|image_pad|>")
+            assert _num_images == _num_origin_images == _num_image_tokens, f"image length mismatch, {_num_images} != {_num_origin_images} != {_num_image_tokens}"
 
             model_inputs = self.processor(
                 text=[raw_prompt], images=images, videos=videos, return_tensors="pt"
@@ -274,7 +291,9 @@ class RLHFDataset(Dataset):
             if "second_per_grid_ts" in model_inputs:
                 model_inputs.pop("second_per_grid_ts")
 
-
+            row_dict["multi_modal_inputs"] = dict(model_inputs)
+            # second_per_grid_ts isn't used for training, just for mrope
+            row_dict["multi_modal_inputs"].pop("second_per_grid_ts", None)
 
         else:
             messages = self._build_messages(row_dict)
@@ -363,10 +382,10 @@ class RLHFDataset(Dataset):
         # encode prompts without chat template
         if self.return_raw_chat:
             row_dict["raw_prompt"] = messages
-        
+
         if self.image_key in row_dict:
             row_dict.pop(self.image_key)
-        
+
         if self.video_key in row_dict:
             row_dict.pop(self.video_key)
 
@@ -385,7 +404,7 @@ class RLHFDataset(Dataset):
             row_dict["total_frames"] = extra_info.get("total_frames", 0)
             row_dict["height"] = extra_info.get("height", 0)
             row_dict["width"] = extra_info.get("width", 0)
-        
+
         return row_dict
 
     def __getstate__(self):
