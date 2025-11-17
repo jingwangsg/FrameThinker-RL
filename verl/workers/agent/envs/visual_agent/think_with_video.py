@@ -124,7 +124,7 @@ class ThinkWithVideo(ToolBase):
                                 raise e
 
                 # Extract single high-resolution frame
-                frame_array = self.vr_highres[frame_idx].asnumpy()
+                frame_array = self.vr_highres[frame_idx].cpu().numpy()
                 frame_image = Image.fromarray(frame_array)
 
                 # Format response
@@ -249,7 +249,7 @@ class ThinkWithVideo(ToolBase):
                 )
             )
 
-            focused_frames_array = self.vr.get_batch(frame_indices).asnumpy()
+            focused_frames_array = self.vr.get_batch(frame_indices).cpu().numpy()
             assert (
                 len(frame_indices) > 0
             ), f"Generated empty frame_indices for interval {sample_start}-{sample_end}"
