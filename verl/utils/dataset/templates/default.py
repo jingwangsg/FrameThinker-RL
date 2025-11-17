@@ -1,17 +1,10 @@
-import numpy as np
 
-
-def get_system_prompt() -> str:
-    SYSTEM_PROMPT = """You are an expert AI assistant that answers questions about a video by iteratively analyzing it.
-Your task is to output your reasoning within a <think> </think> tag, followed by the final answer (OPTION only) within 
-an <action> </action> tag, i.e., <action>`output answer: OPTION`</action>."""
+def get_system_prompt():
+    SYSTEM_PROMPT = """Please think about this question as if you were a human pondering deeply. Engage in an internal dialogue using expressions such as 'let me think', 'wait', 'Hmm', 'oh, I see', 'let's break it down', etc, or other natural language thought expressions. It's encouraged to include self-reflection or verification in the reasoning process. Provide your detailed reasoning between the <think> </think> tags, and then give your final answer between the <answer> </answer> tags."""
     return SYSTEM_PROMPT
 
-
 def get_image_placeholders(num_frames: int, total_frames: int) -> str:
-    frame_indices = np.linspace(0, total_frames - 1, num_frames, dtype=int).tolist()
-    return "\n".join([f"frame {idx}:<image>" for idx in frame_indices])
-
+    return f"<image>{num_frames}/{total_frames}"
 
 def apply_message_template(messages, **kwargs):
     assert (
@@ -21,14 +14,12 @@ def apply_message_template(messages, **kwargs):
     assert len(messages) == 1, "Only one message is allowed"
 
     total_frames = kwargs["extra_info"]["total_frames"]
-    images = kwargs["images"]
-
-    image_placeholders = get_image_placeholders(num_frames=len(images), total_frames=total_frames)
+    num_frames = len(kwargs["multi_modal_data"]["image"])
+    image_placeholders = get_image_placeholders(num_frames=num_frames, total_frames=total_frames)
 
     question = messages[0]["content"]
     messages = [
         {"role": "system", "content": get_system_prompt()},
         {"role": "user", "content": question + "\n" + image_placeholders},
     ]
-
     return messages

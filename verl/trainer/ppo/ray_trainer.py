@@ -582,6 +582,7 @@ class RayPPOTrainer:
             processor=self.processor,
             config=self.config.data,
         )
+
         self.val_dataloader = StatefulDataLoader(
             dataset=self.val_dataset,
             # Validation datasets are sent to inference engines as a whole batch,
@@ -594,10 +595,10 @@ class RayPPOTrainer:
         )
 
         assert len(self.train_dataloader) >= 1
-        assert len(self.val_dataloader) == 1, (
-            "Validation dataloader must have a single batch,"
-            + " which inference engines will schedule the memory themselves."
-        )
+        # assert len(self.val_dataloader) == 1, (
+        #     "Validation dataloader must have a single batch,"
+        #     + " which inference engines will schedule the memory themselves."
+        # )
 
         print(f"Size of train dataloader: {len(self.train_dataloader)}")
 
@@ -655,7 +656,10 @@ class RayPPOTrainer:
         sample_acc_scores = []
         sample_fmt_scores = []
 
-        for test_data in self.val_dataloader:
+        st = time.time()
+        for test_data in tqdm(self.val_dataloader, desc="Validating"):
+            print(f"Time taken to load test data: {time.time() - st}")
+
             test_batch = DataProto.from_single_dict(test_data)
 
             # repeat test batch
@@ -731,6 +735,7 @@ class RayPPOTrainer:
             test_gen_batch_padded, pad_size = pad_dataproto_to_divisor(
                 test_gen_batch, self.actor_rollout_wg.world_size
             )
+
             test_output_gen_batch_padded = self.actor_rollout_wg.generate_sequences(
                 test_gen_batch_padded
             )
@@ -739,7 +744,6 @@ class RayPPOTrainer:
             test_output_gen_batch = unpad_dataproto(
                 test_output_gen_batch_padded, pad_size=pad_size
             )
-            print("validation generation end")
 
             # Store generated outputs
             output_ids = test_output_gen_batch.batch["responses"]
@@ -747,9 +751,6 @@ class RayPPOTrainer:
                 self.tokenizer.decode(ids, skip_special_tokens=True)
                 for ids in output_ids
             ]
-            # print("output_texts:", output_texts)
-
-            sample_outputs.extend(output_texts)
 
             test_batch = test_batch.union(test_output_gen_batch)
 
@@ -766,7 +767,9 @@ class RayPPOTrainer:
             except (KeyError, TypeError) as e:
                 print(f"Error in val_reward_fn with return_dict=True: {e}")
                 print("Falling back to tuple unpacking...")
-                sum_tensor, acc_tensor, format_tensor, other_tensor = self.val_reward_fn(test_batch)
+                sum_tensor, acc_tensor, format_tensor, other_tensor = (
+                    self.val_reward_fn(test_batch)
+                )
                 result = {}
 
             acc_scores = acc_tensor.sum(-1).cpu().tolist()
@@ -798,7 +801,7 @@ class RayPPOTrainer:
             inputs=sample_inputs,
             outputs=sample_outputs,
             acc_scores=sample_acc_scores,
-            fmt_scores=sample_fmt_scores
+            fmt_scores=sample_fmt_scores,
         )
 
         for key_info, lst in reward_extra_infos_dict.items():
@@ -837,6 +840,8 @@ class RayPPOTrainer:
                         metric_sec = "val-aux"
                     pfx = f"{metric_sec}/{data_source}/{var_name}/{metric_name}"
                     metric_dict[pfx] = metric_val
+        
+        print(metric_dict)
 
         return metric_dict
 
@@ -893,15 +898,14 @@ class RayPPOTrainer:
                 config=self.config.reward_model,
             )
             self.resource_pool_to_cls[resource_pool]["rm"] = rm_cls
-        
+
         ########## Add verifier ##########
         # _raw_value = self.actor_rollout_wg.rollout.config.activate_agent
         # self.actor_rollout_wg.rollout.config.activate_agent = False
-        # # generate sequences 
+        # # generate sequences
         # self.actor_rollout_wg.rollout.config.activate_agent = _raw_value
 
         ##################################
-
 
         # initialize WorkerGroup
         # NOTE: if you want to use a different resource pool for each role, which can support different parallel size,
@@ -1217,10 +1221,10 @@ class RayPPOTrainer:
                         gen_batch_output = self.actor_rollout_wg.generate_sequences(
                             gen_batch
                         )
-                    
+
                     # print("gen_batch")
                     # gen_batch.pretty_print()
-                    
+
                     # print("gen_batch_output")
                     # gen_batch_output.pretty_print()
 
@@ -1310,7 +1314,6 @@ class RayPPOTrainer:
                         # We first compute the scores using reward model. Then, we call reward_fn to combine
                         # the results from reward model and rule-based results.
 
-                        
                         if self.use_rm:
                             # we first compute reward model score
                             reward_tensor = self.rm_wg.compute_rm_score(batch)

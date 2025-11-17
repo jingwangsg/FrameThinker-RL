@@ -88,8 +88,8 @@ def get_rope_index(
         image_nums, video_nums = 0, 0
         vision_start_indices = torch.argwhere(input_ids == vision_start_token_id)
         vision_tokens = input_ids[vision_start_indices + 1]
-        image_nums = (vision_tokens == image_token_id).sum()
-        video_nums = (vision_tokens == video_token_id).sum()
+        image_nums = (vision_tokens == image_token_id).sum().item()
+        video_nums = (vision_tokens == video_token_id).sum().item()
         input_tokens = input_ids.tolist()
         llm_pos_ids_list: list = []
         st = 0
@@ -104,6 +104,10 @@ def get_rope_index(
             else:
                 ed_video = len(input_tokens) + 1
             if ed_image < ed_video:
+
+                if image_index >= len(image_grid_thw):
+                    breakpoint()
+
                 t, h, w = (
                     image_grid_thw[image_index][0],
                     image_grid_thw[image_index][1],
