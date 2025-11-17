@@ -19,6 +19,7 @@ import numpy as np
 from datasets import load_dataset, Dataset
 from PIL import Image
 from torchcodec.decoders import VideoDecoder
+from einops import rearrange
 
 
 def get_video_metadata(video_path: str) -> Dict[str, any]:
@@ -64,9 +65,17 @@ def get_video_metadata(video_path: str) -> Dict[str, any]:
         print(f"Error processing {video_path}: {e}")
         raise
 
+def compute_target_size(width: int, height: int, size: int) -> tuple[int, int]:
+    """
+    Compute target size for video frame resizing.
+    """
+    if width > height:
+        return size, int(size * height / width)
+    else:
+        return int(size * width / height), size
 
 def extract_frames(
-    video_path: str, num_frames: int = 8
+    video_path: str, num_frames: int = 8, size=360,
 ) -> tuple[List[Dict], List[int]]:
     """
     Extract evenly-spaced frames from video using torchcodec VideoDecoder.
@@ -87,17 +96,14 @@ def extract_frames(
     # Calculate frame indices (evenly spaced, excluding last frame)
     frame_indices = np.linspace(0, total_frames - 1, num_frames, dtype=int).tolist()
 
-    frames = []
-    for idx in frame_indices:
-        # Get frame (returns torch tensor in CHW format)
-        frame_tensor = decoder[idx]
+    frames = decoder.get_frames_at(frame_indices).data
+    frames = rearrange(frames, 't c h w -> t h w c')
+    frames = frames.cpu().numpy()
 
-        # Convert from CHW to HWC and to numpy
-        frame = frame_tensor.permute(1, 2, 0).cpu().numpy()
+    outputs = []
 
+    for frame in frames:
         # Convert to PIL Image (ensure uint8)
-        if frame.dtype != np.uint8:
-            frame = (frame * 255).astype(np.uint8) if frame.max() <= 1.0 else frame.astype(np.uint8)
         pil_image = Image.fromarray(frame)
 
         # Convert to PNG bytes
@@ -105,9 +111,9 @@ def extract_frames(
         pil_image.save(buffer, format="PNG")
         image_bytes = buffer.getvalue()
 
-        frames.append({"bytes": image_bytes, "path": None})
+        outputs.append({"bytes": image_bytes, "path": None})
 
-    return frames, frame_indices
+    return outputs, frame_indices
 
 
 def build_prompt(question: str) -> List[Dict]:
@@ -157,7 +163,7 @@ def process_single_sample(
         video_meta = get_video_metadata(abs_video_path)
 
         # Extract frames
-        frames, frame_indices = extract_frames(abs_video_path, num_frames=num_frames)
+        # frames, frame_indices = extract_frames(abs_video_path, num_frames=num_frames)
 
         # Build prompt with actual frame indices
         question = example["question"]
@@ -189,9 +195,10 @@ def process_single_sample(
         return {
             "data_source": data_source,
             "prompt": prompt,
-            "images": frames,
+            # "images": frames,
             "ability": "vl_video_reasoning",
             "env_name": "think_with_video",
+            "video_path": video_path,
             "reward_model": {"ground_truth": ground_truth, "style": "rule"},
             "ground_truth": ground_truth,
             "question_type": example.get("question_type", "mcq"),
@@ -215,7 +222,6 @@ def get_empty_sample_schema():
         "_skip": True,
         "data_source": "",
         "prompt": [],
-        "images": [],
         "ability": "",
         "env_name": "",
         "reward_model": {},
