@@ -6,39 +6,36 @@ swanlab login --api-key <api_key>
 set -x
 ulimit -n 65535
 
-echo "Environment Variables:"
-echo "  MASTER_ADDR: $MASTER_ADDR"
-echo "  MASTER_PORT: $MASTER_PORT"
-echo "  WORLD_SIZE: $WORLD_SIZE"
-echo "  RANK: $RANK"
-echo "  NPROC_PER_NODE: $NPROC_PER_NODE"
-
 PROJECT_DIR="$(pwd)"
 
 BASE_DATA_DIR=$PROJECT_DIR/data/video_reason/Video-Holmes
 PROJECT_NAME=video_holmes_rl
-EXPERIMENT_NAME=framethinker_baseline
+EXP_NAME=${EXP_NAME:-framethinker_vonly_cs_zoom_in}
 SAVE_CHECKPOINT_DIR=$PROJECT_DIR/ckpt/video_reason
-REF_MODEL_PATH=$PROJECT_DIR/model_weights/Qwen2.5-VL-7B-Instruct
-TRAIN_FILES=$PROJECT_DIR/data/video_reason/Video-Holmes/train_v2.parquet
-VAL_FILES=$PROJECT_DIR/data/video_reason/Video-Holmes/test_v2.parquet
+MODEL_PATH=${MODEL_PATH:-$PROJECT_DIR/model_weights/ft_coldstart/qwen2_5vl_7b_full_framethinker_sft}
+MEDIA_DIA=${MEDIA_DIA:-$PROJECT_DIR/data/video_reason/}
+TRAIN_FILES=${TRAIN_FILES:-$PROJECT_DIR/data/video_reason/Video-Holmes/train.parquet}
+VAL_FILES=${VAL_FILES:-$PROJECT_DIR/data/video_reason/Video-Holmes/test.parquet}
 
-python3 -m verl.trainer.main_ppo \
+
+PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
     "data.train_files=[${TRAIN_FILES}]" \
     "data.val_files=[${VAL_FILES}]" \
-    data.train_batch_size=32 \
-    data.val_batch_size=64 \
+    data.train_batch_size=64 \
+    data.val_batch_size=128 \
     data.max_prompt_length=8192 \
-    data.max_response_length=8192 \
+    data.max_response_length=16384 \
+    data.media_dir=${MEDIA_DIA} \
     data.return_raw_chat=True \
     data.filter_overlong_prompts=False \
     data.dataloader_num_workers=8 \
+    data.message_template=framethinker_add_zoomin \
     algorithm.adv_estimator=grpo \
     algorithm.kl_ctrl.kl_coef=0.0 \
-    actor_rollout_ref.model.path=${REF_MODEL_PATH} \
+    actor_rollout_ref.model.path=${MODEL_PATH} \
     actor_rollout_ref.model.use_remove_padding=True \
-    actor_rollout_ref.actor.optim.lr=5e-7 \
-    actor_rollout_ref.actor.ppo_mini_batch_size=32 \
+    actor_rollout_ref.actor.optim.lr=3e-6 \
+    actor_rollout_ref.actor.ppo_mini_batch_size=64 \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=2 \
     actor_rollout_ref.actor.use_kl_loss=False \
     actor_rollout_ref.actor.kl_loss_coef=0 \
@@ -56,6 +53,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.enable_chunked_prefill=False \
     actor_rollout_ref.actor.fsdp_config.param_offload=True \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=True \
+    actor_rollout_ref.actor.fsdp_config.fsdp_size=-1 \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=2 \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
     actor_rollout_ref.rollout.agent.activate_agent=True \
@@ -66,15 +64,22 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.agent.show_tqdm=True \
     actor_rollout_ref.rollout.agent.max_vllm_images=128 \
     trainer.critic_warmup=0 \
-    trainer.logger=['console','swanlab','tensorboard'] \
+    trainer.logger=['console','swanlab'] \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes=1 \
-    trainer.save_freq=50 \
-    trainer.val_before_train=False \
-    trainer.test_freq=-1 \
+    trainer.save_freq=20 \
+    trainer.val_before_train=True \
+    trainer.test_freq=20 \
+    trainer.max_actor_ckpt_to_keep=5 \
     trainer.project_name=${PROJECT_NAME} \
-    trainer.experiment_name=${EXPERIMENT_NAME} \
-    trainer.default_local_dir=${SAVE_CHECKPOINT_DIR}/${PROJECT_NAME}/${EXPERIMENT_NAME} \
-    +trainer.tensorboard_dir=${SAVE_CHECKPOINT_DIR}/${PROJECT_NAME}/${EXPERIMENT_NAME}/logs/tensorboard \
-    +trainer.rl_logging_board_dir=${SAVE_CHECKPOINT_DIR}/${PROJECT_NAME}/${EXPERIMENT_NAME}/logs/rl_logging_board \
-    trainer.total_epochs=10 $@
+    trainer.experiment_name=${EXP_NAME} \
+    trainer.default_local_dir=${SAVE_CHECKPOINT_DIR}/${PROJECT_NAME}/${EXP_NAME} \
+    +trainer.tensorboard_dir=${SAVE_CHECKPOINT_DIR}/logs/tensorboard \
+    +trainer.rl_logging_board_dir=${SAVE_CHECKPOINT_DIR}/logs/rl_logging_board \
+    trainer.total_epochs=20 \
+    custom_reward_function.path=verl/utils/reward_score/think_with_video_reward.py \
+    custom_reward_function.name=compute_score \
+    +custom_reward_function.reward_kwargs.nframes=8 \
+    +custom_reward_function.reward_kwargs.lambda_gfn=0.5 \
+    +custom_reward_function.reward_kwargs.lambda_cf=0.02 \
+    $@
