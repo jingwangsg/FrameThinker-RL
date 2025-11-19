@@ -1,4 +1,4 @@
-set CKPT_FULL /mnt/amlfs-02/shared/checkpoints/jingwang/video_reason/sft/qwen2_5vl_7b_full_framethinker_sft/
+set CKPT_FULL /mnt/amlfs-02/shared/checkpoints/jingwang/video_reason/sft/qwen2_5vl_7b_full_framethinker_sft
 
 EXP=framethinker_coldstart_full_toolv2_lr3e-6_bsz32_1115 \
 ray_job_submit --skip-exists --no-wait --submission-id $EXP \
