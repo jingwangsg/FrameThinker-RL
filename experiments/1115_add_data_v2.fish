@@ -18,11 +18,11 @@ ray_job_submit --skip-exists --no-wait --submission-id $EXP \
   -- bash -c "
     EXP_NAME=$EXP \
     TRAIN_FILES=$VH,$LVR10K \
-    VAL_FILES=$VHTEST,$LVRTEST,$VIDEOMMMU_MCQ,$MMVU,$VSIBENCH_MCQ \
+    VAL_FILES=$VHTEST,$LVRTEST \
     bash examples/agent/train_frame_thinker.sh \
     data.message_template=framethinker_default \
     actor_rollout_ref.rollout.tensor_model_parallel_size=4 \
-    trainer.test_freq=-1
+    trainer.test_freq=50
   "
 
 EXP=framethinker_coldstart_full_vh+lvr3k_1112 \
@@ -32,11 +32,11 @@ ray_job_submit --skip-exists --no-wait --submission-id $EXP \
     EXP_NAME=$EXP \
     MODEL_PATH=$CKPT_FULL \
     TRAIN_FILES=$VH,$LVR3K \
-    VAL_FILES=$VHTEST,$LVRTEST,$VIDEOMMMU_MCQ,$MMVU,$VSIBENCH_MCQ \
+    VAL_FILES=$VHTEST,$LVRTEST \
     bash examples/agent/train_frame_thinker.sh \
     data.message_template=framethinker_default \
     actor_rollout_ref.rollout.tensor_model_parallel_size=4 \
-    trainer.test_freq=-1
+    trainer.test_freq=50
   "
 
 EXP=framethinker_coldstart_full_lr1e-6_vh+lvr3k_1112 \
@@ -46,11 +46,11 @@ ray_job_submit --skip-exists --no-wait --submission-id $EXP \
     EXP_NAME=$EXP \
     MODEL_PATH=$CKPT_FULL \
     TRAIN_FILES=$VH,$LVR3K \
-    VAL_FILES=$VHTEST,$LVRTEST,$VIDEOMMMU_MCQ,$MMVU,$VSIBENCH_MCQ \
+    VAL_FILES=$VHTEST,$LVRTEST \
     bash examples/agent/train_frame_thinker.sh \
     data.message_template=framethinker_default \
     actor_rollout_ref.rollout.tensor_model_parallel_size=4 \
-    trainer.test_freq=-1 \
+    trainer.test_freq=50 \
     actor_rollout_ref.actor.optim.lr=1e-6
   "
 
@@ -63,10 +63,10 @@ ray_job_submit --skip-exists --no-wait --submission-id $EXP \
     EXP_NAME=$EXP \
     MODEL_PATH=$CKPT_FULL \
     TRAIN_FILES=$VH,$LVR10K \
-    VAL_FILES=$VHTEST,$LVRTEST,$VIDEOMMMU_MCQ,$MMVU,$VSIBENCH_MCQ \
+    VAL_FILES=$VHTEST,$LVRTEST \
     bash examples/agent/train_frame_thinker.sh \
     data.message_template=framethinker_add_zoomin \
     actor_rollout_ref.rollout.tensor_model_parallel_size=4 \
-    trainer.test_freq=-1 \
+    trainer.test_freq=50 \
     actor_rollout_ref.actor.optim.lr=1e-6
   "
