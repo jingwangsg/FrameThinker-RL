@@ -17,7 +17,7 @@ from verl.utils.dataset.vision_utils import (
     process_video,
 )
 from verl.utils.torch_functional import pad_2d_list_to_length
-from verl.workers.agent.tool_envs import ToolBase
+from verl.workers.agent.tool_envs import ToolBase, extract_tool_call_contents
 from loguru import logger
 
 
@@ -181,6 +181,9 @@ def agent_rollout_loop(
     active_mask = []
     mm_input_list = []
     tool_call_cnt_list = []
+    choose_frames_cnt_list = []
+    get_time_cnt_list = []
+    zoom_cnt_list = []
 
     env = ParallelEnv(config.agent, tokenizer, processor)
     env.reset(prompts, vllm_inputs, n=sampling_params.n)
@@ -199,6 +202,9 @@ def agent_rollout_loop(
             active_mask.append(True)
             mm_input_list.append(deepcopy(multi_modal_inputs[i]))
             tool_call_cnt_list.append(0)
+            choose_frames_cnt_list.append(0)
+            get_time_cnt_list.append(0)
+            zoom_cnt_list.append(0)
 
     pg = vllm_ps.get_tp_group()
     max_total_length = config.prompt_length + config.response_length
@@ -278,6 +284,18 @@ def agent_rollout_loop(
                 active_mask[idx] = False
                 continue
             tool_call_cnt_list[idx] += 1
+
+            # Parse and count tool type
+            action_text = act.outputs[0].text
+            action_blocks = extract_tool_call_contents("<action>", "</action>", action_text)
+            if action_blocks:
+                action_block = action_blocks[-1].strip()
+                if re.match(r"choose frames between \d+ and \d+", action_block):
+                    choose_frames_cnt_list[idx] += 1
+                elif re.match(r"get frame number at time\s+\S+", action_block):
+                    get_time_cnt_list[idx] += 1
+                elif re.match(r"zoom in frame\s+\d+", action_block):
+                    zoom_cnt_list[idx] += 1
 
             # process obs tokens and images
             if (
@@ -427,6 +445,21 @@ def agent_rollout_loop(
         .to(target_device)
         .unsqueeze(1)
     )
+    choose_frames_tensor = (
+        torch.tensor(choose_frames_cnt_list, dtype=torch.float32)
+        .to(target_device)
+        .unsqueeze(1)
+    )
+    get_time_tensor = (
+        torch.tensor(get_time_cnt_list, dtype=torch.float32)
+        .to(target_device)
+        .unsqueeze(1)
+    )
+    zoom_tensor = (
+        torch.tensor(zoom_cnt_list, dtype=torch.float32)
+        .to(target_device)
+        .unsqueeze(1)
+    )
 
     return DataProto.from_dict(
         tensors={
@@ -436,6 +469,9 @@ def agent_rollout_loop(
             "position_ids": position_ids_tensor,
             "env_reward": reward_tensor[:, -config.response_length :],
             "tool_cnt": tool_call_tensor,
+            "choose_frames_cnt": choose_frames_tensor,
+            "get_time_cnt": get_time_tensor,
+            "zoom_cnt": zoom_tensor,
         },
         non_tensors=(
             {"multi_modal_inputs": mm_input_list} if processor is not None else None

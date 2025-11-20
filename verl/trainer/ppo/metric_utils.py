@@ -188,12 +188,39 @@ def compute_agent_metrics(batch: DataProto):
     if 'tool_cnt' not in batch.batch.keys():
         return {}
 
+    metrics = {}
+
+    # Overall tool calls
     tool_cnt_tensor = batch.batch.pop('tool_cnt').detach().cpu()
-    return {
+    metrics.update({
         "agent/tool_call_mean": torch.mean(tool_cnt_tensor).item(),
         "agent/tool_call_max": torch.max(tool_cnt_tensor).item(),
         "agent/tool_call_min": torch.min(tool_cnt_tensor).item(),
-    }
+    })
+
+    # Per-tool-type metrics (using hierarchical naming for grouped visualization)
+    if 'choose_frames_cnt' in batch.batch.keys():
+        choose_frames_tensor = batch.batch.pop('choose_frames_cnt').detach().cpu()
+        metrics.update({
+            "agent/tool_type/choose_frames_mean": torch.mean(choose_frames_tensor).item(),
+            "agent/tool_type/choose_frames_max": torch.max(choose_frames_tensor).item(),
+        })
+
+    if 'get_time_cnt' in batch.batch.keys():
+        get_time_tensor = batch.batch.pop('get_time_cnt').detach().cpu()
+        metrics.update({
+            "agent/tool_type/get_time_mean": torch.mean(get_time_tensor).item(),
+            "agent/tool_type/get_time_max": torch.max(get_time_tensor).item(),
+        })
+
+    if 'zoom_cnt' in batch.batch.keys():
+        zoom_tensor = batch.batch.pop('zoom_cnt').detach().cpu()
+        metrics.update({
+            "agent/tool_type/zoom_mean": torch.mean(zoom_tensor).item(),
+            "agent/tool_type/zoom_max": torch.max(zoom_tensor).item(),
+        })
+
+    return metrics
 
 
 def bootstrap_metric(
