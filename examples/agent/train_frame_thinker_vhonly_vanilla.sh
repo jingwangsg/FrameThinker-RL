@@ -81,4 +81,6 @@ PYTHONUNBUFFERED=1  python3 -m verl.trainer.main_ppo \
     +trainer.tensorboard_dir=${SAVE_CHECKPOINT_DIR}/logs/tensorboard \
     +trainer.rl_logging_board_dir=${SAVE_CHECKPOINT_DIR}/logs/rl_logging_board \
     trainer.total_epochs=20 \
+    custom_reward_function.path=verl/utils/reward_score/think_with_video_default.py \
+    custom_reward_function.name=compute_score \
     $@
