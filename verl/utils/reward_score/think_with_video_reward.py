@@ -37,6 +37,7 @@ def compute_score(
     nframes=8,
     lambda_gfn=0.5,
     lambda_cf=0.02,
+    lambda_zoom=0.1,
     **kwargs,
 ):
     format_score = 0.0
@@ -67,6 +68,7 @@ def compute_score(
 
     action_frame_pairs = [(0, extra_info["total_frames"] - 1)]
     requested_times = []
+    zoomed_frames = []
     expected_frame_in_next_action = None
 
     for i, action in enumerate(action_contents[:-1]):
@@ -125,6 +127,35 @@ def compute_score(
                 return total_score, acc_score, format_score, other_score
             continue
 
+        zoom_match = re.match(r"zoom in frame\s+(\d+)", action)
+        if zoom_match:
+            frame_idx = int(zoom_match.group(1))
+
+            # Check if frame was already zoomed
+            if frame_idx in zoomed_frames:
+                return total_score, acc_score, format_score, other_score
+            zoomed_frames.append(frame_idx)
+
+            # Validate frame number is within video range
+            if frame_idx < 0 or frame_idx >= extra_info["total_frames"]:
+                return total_score, acc_score, format_score, other_score
+
+            # Check if frame number appears in think block
+            numbers_in_think = re.findall(r"(?<!:)\b(\d+)\b(?!:)", think_block)
+            if len(numbers_in_think) >= 1:
+                if frame_idx not in map(int, numbers_in_think):
+                    return total_score, acc_score, format_score, other_score
+            else:
+                return total_score, acc_score, format_score, other_score
+
+            # Validate system response format
+            system_response = system_responses[i].strip()
+            response_match = re.search(rf"frame\s+{frame_idx}:", system_response)
+            if not response_match:
+                return total_score, acc_score, format_score, other_score
+
+            continue
+
         return total_score, acc_score, format_score, other_score
 
     if expected_frame_in_next_action is not None:
@@ -141,6 +172,8 @@ def compute_score(
                 other_score += lambda_gfn
         if len(action_frame_pairs) > 1:
             other_score += lambda_cf
+        if len(zoomed_frames) > 0:
+            other_score += lambda_zoom
     total_score = acc_score + other_score
 
     return total_score, acc_score, format_score, other_score

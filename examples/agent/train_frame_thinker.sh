@@ -82,4 +82,5 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
     +custom_reward_function.reward_kwargs.nframes=8 \
     +custom_reward_function.reward_kwargs.lambda_gfn=0.5 \
     +custom_reward_function.reward_kwargs.lambda_cf=0.02 \
+    +custom_reward_function.reward_kwargs.lambda_zoom=0.1 \
     $@
