@@ -1,0 +1,22 @@
+{
+  "summary": {
+    "total_videos": 17841,
+    "readable": 17841,
+    "unreadable": 0,
+    "check_time": "2025-11-20 17:50:29",
+    "duration_seconds": 134.3
+  },
+  "by_directory": {
+    "/mnt/amlfs-02/shared/datasets/s3/video_reason/Video-Holmes/videos/": {
+      "total": 484,
+      "readable": 484,
+      "unreadable": 0
+    },
+    "/mnt/amlfs-02/shared/datasets/s3/video_reason/LongVideo-Reason/videos/": {
+      "total": 17357,
+      "readable": 17357,
+      "unreadable": 0
+    }
+  },
+  "unreadable_videos": []
+}
