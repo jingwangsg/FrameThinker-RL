@@ -6,7 +6,6 @@ import numpy as np
 import requests
 import base64
 import json
-import decord
 import numpy as np
 import torch
 from typing import List, Dict, Tuple, Any
@@ -17,6 +16,8 @@ from math import ceil, floor
 from PIL import Image
 from verl.workers.agent.tool_envs import ToolBase, extract_tool_call_contents
 import cv2
+from torchcodec.decoders import VideoDecoder
+from torchvision.transforms.functional import resize as tv_resize
 
 
 def compute_target_size(width: int, height: int, size: int) -> tuple[int, int]:
@@ -96,11 +97,10 @@ class ThinkWithVideo(ToolBase):
                             target_h, target_w = compute_target_size(
                                 self.width, self.height, size=360
                             )
-                            self.vr_highres = decord.VideoReader(
+                            self.vr_highres = VideoDecoder(
                                 self.video_path,
-                                ctx=decord.cpu(0),
-                                width=target_w,
-                                height=target_h,
+                                device="cpu",
+                                num_ffmpeg_threads=0,
                             )
 
                             break
@@ -124,7 +124,11 @@ class ThinkWithVideo(ToolBase):
                                 raise e
 
                 # Extract single high-resolution frame
-                frame_array = self.vr_highres[frame_idx].cpu().numpy()
+                frame_tensor = self.vr_highres[frame_idx]  # [C, H, W]
+                # Resize to target size
+                frame_tensor_resized = tv_resize(frame_tensor, [target_h, target_w])
+                # Convert to [H, W, C] numpy array
+                frame_array = frame_tensor_resized.permute(1, 2, 0).cpu().numpy()
                 frame_image = Image.fromarray(frame_array)
 
                 # Format response
@@ -210,11 +214,10 @@ class ThinkWithVideo(ToolBase):
                         target_h, target_w = compute_target_size(
                             self.width, self.height, size=256
                         )
-                        self.vr = decord.VideoReader(
+                        self.vr = VideoDecoder(
                             self.video_path,
-                            ctx=decord.cpu(0),
-                            width=target_w,
-                            height=target_h,
+                            device="cpu",
+                            num_ffmpeg_threads=0,
                         )
                         break
                     except Exception as e:
@@ -249,7 +252,13 @@ class ThinkWithVideo(ToolBase):
                 )
             )
 
-            focused_frames_array = self.vr.get_batch(frame_indices).cpu().numpy()
+            # Get frames using torchcodec
+            frame_batch = self.vr.get_frames_at(frame_indices)
+            focused_frames_tensor = frame_batch.data  # [N, C, H, W]
+            # Resize all frames to target size
+            frames_resized = torch.stack([tv_resize(f, [target_h, target_w]) for f in focused_frames_tensor])
+            # Convert to [N, H, W, C] numpy array
+            focused_frames_array = frames_resized.permute(0, 2, 3, 1).cpu().numpy()
             assert (
                 len(frame_indices) > 0
             ), f"Generated empty frame_indices for interval {sample_start}-{sample_end}"
