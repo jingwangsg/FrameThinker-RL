@@ -12,61 +12,89 @@ set MMVU $DATA_DIR/BENCHMARKS/mmvu.parquet
 set VSIBENCH_MCQ $DATA_DIR/BENCHMARKS/vsibench_mcq.parquet
 
 
-EXP=framethinker_baseline_vh+lvr10k_1112 \
-ray_job_submit --skip-exists --no-wait --submission-id $EXP \
-  --runtime-env ../runtime_env.yaml \
-  -- bash -c "
-    EXP_NAME=$EXP \
-    TRAIN_FILES=$VH,$LVR10K \
-    VAL_FILES=$VHTEST,$LVRTEST \
-    bash examples/agent/train_frame_thinker.sh \
-    data.message_template=framethinker_default \
-    actor_rollout_ref.rollout.tensor_model_parallel_size=4 \
-    trainer.test_freq=50
-  "
+# EXP=framethinker_baseline_vh+lvr10k_1112 \
+# ray_job_submit --skip-exists --no-wait --submission-id $EXP \
+#   --runtime-env ../runtime_env.yaml \
+#   -- bash -c "
+#     EXP_NAME=$EXP \
+#     TRAIN_FILES=$VH,$LVR10K \
+#     VAL_FILES=$VHTEST,$LVRTEST \
+#     bash examples/agent/train_frame_thinker.sh \
+#     data.message_template=framethinker_default \
+#     actor_rollout_ref.rollout.tensor_model_parallel_size=4 \
+#     trainer.test_freq=50
+#   "
 
-EXP=framethinker_coldstart_full_vh+lvr3k_1112 \
+# EXP=framethinker_coldstart_full_vh+lvr3k_1112 \
+# ray_job_submit --skip-exists --no-wait --submission-id $EXP \
+#   --runtime-env ../runtime_env.yaml \
+#   -- bash -c "
+#     EXP_NAME=$EXP \
+#     MODEL_PATH=$CKPT_FULL \
+#     TRAIN_FILES=$VH,$LVR3K \
+#     VAL_FILES=$VHTEST,$LVRTEST \
+#     bash examples/agent/train_frame_thinker.sh \
+#     data.message_template=framethinker_default \
+#     actor_rollout_ref.rollout.tensor_model_parallel_size=4 \
+#     trainer.test_freq=50
+#   "
+
+# EXP=framethinker_coldstart_full_lr1e-6_vh+lvr3k_1112 \
+# ray_job_submit --skip-exists --no-wait --submission-id $EXP \
+#   --runtime-env ../runtime_env.yaml \
+#   -- bash -c "
+#     EXP_NAME=$EXP \
+#     MODEL_PATH=$CKPT_FULL \
+#     TRAIN_FILES=$VH,$LVR3K \
+#     VAL_FILES=$VHTEST,$LVRTEST \
+#     bash examples/agent/train_frame_thinker.sh \
+#     data.message_template=framethinker_default \
+#     actor_rollout_ref.rollout.tensor_model_parallel_size=4 \
+#     trainer.test_freq=50 \
+#     actor_rollout_ref.actor.optim.lr=1e-6
+#   "
+
+# EXP=framethinker_coldstart_full_toolv2_lr1e-6_vh+lvr10k_1112 \
+# ray_job_submit --skip-exists --no-wait --submission-id $EXP \
+#   --runtime-env ../runtime_env.yaml \
+#   -- bash -c "
+#     EXP_NAME=$EXP \
+#     MODEL_PATH=$CKPT_FULL \
+#     TRAIN_FILES=$VH,$LVR10K \
+#     VAL_FILES=$VHTEST,$LVRTEST \
+#     bash examples/agent/train_frame_thinker.sh \
+#     data.message_template=framethinker_add_zoomin \
+#     actor_rollout_ref.rollout.tensor_model_parallel_size=4 \
+#     trainer.test_freq=50 \
+#     actor_rollout_ref.actor.optim.lr=1e-6
+#   "
+
+
+EXP=framethinker_coldstart_full_toolv2_lr1e-6_vh+lvr3k_1112 \
 ray_job_submit --skip-exists --no-wait --submission-id $EXP \
   --runtime-env ../runtime_env.yaml \
   -- bash -c "
     EXP_NAME=$EXP \
     MODEL_PATH=$CKPT_FULL \
     TRAIN_FILES=$VH,$LVR3K \
-    VAL_FILES=$VHTEST,$LVRTEST \
-    bash examples/agent/train_frame_thinker.sh \
-    data.message_template=framethinker_default \
-    actor_rollout_ref.rollout.tensor_model_parallel_size=4 \
-    trainer.test_freq=50
-  "
-
-EXP=framethinker_coldstart_full_lr1e-6_vh+lvr3k_1112 \
-ray_job_submit --skip-exists --no-wait --submission-id $EXP \
-  --runtime-env ../runtime_env.yaml \
-  -- bash -c "
-    EXP_NAME=$EXP \
-    MODEL_PATH=$CKPT_FULL \
-    TRAIN_FILES=$VH,$LVR3K \
-    VAL_FILES=$VHTEST,$LVRTEST \
-    bash examples/agent/train_frame_thinker.sh \
-    data.message_template=framethinker_default \
-    actor_rollout_ref.rollout.tensor_model_parallel_size=4 \
-    trainer.test_freq=50 \
-    actor_rollout_ref.actor.optim.lr=1e-6
-  "
-
-
-# framethinker_coldstart_full_toolv2
-EXP=framethinker_coldstart_full_toolv2_lr1e-6_vh+lvr10k_1112 \
-ray_job_submit --skip-exists --no-wait --submission-id $EXP \
-  --runtime-env ../runtime_env.yaml \
-  -- bash -c "
-    EXP_NAME=$EXP \
-    MODEL_PATH=$CKPT_FULL \
-    TRAIN_FILES=$VH,$LVR10K \
     VAL_FILES=$VHTEST,$LVRTEST \
     bash examples/agent/train_frame_thinker.sh \
     data.message_template=framethinker_add_zoomin \
     actor_rollout_ref.rollout.tensor_model_parallel_size=4 \
     trainer.test_freq=50 \
     actor_rollout_ref.actor.optim.lr=1e-6
+  "
+
+
+EXP=framethinker_baseline_vh+lvr3k_1112 \
+ray_job_submit --skip-exists --no-wait --submission-id $EXP \
+  --runtime-env ../runtime_env.yaml \
+  -- bash -c "
+    EXP_NAME=$EXP \
+    TRAIN_FILES=$VH,$LVR3K \
+    VAL_FILES=$VHTEST,$LVRTEST \
+    bash examples/agent/train_frame_thinker.sh \
+    data.message_template=framethinker_default \
+    actor_rollout_ref.rollout.tensor_model_parallel_size=4 \
+    trainer.test_freq=50
   "

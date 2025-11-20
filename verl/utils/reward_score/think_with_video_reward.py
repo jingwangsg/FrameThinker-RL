@@ -37,6 +37,7 @@ def compute_score(
     nframes=8,
     lambda_gfn=0.5,
     lambda_cf=0.02,
+    alpha_zoom=0.1,
     **kwargs,
 ):
     format_score = 0.0
@@ -45,6 +46,7 @@ def compute_score(
     total_score = 0.0
     question = extra_info["question"]
     time_reward = False
+    zoom_used = False
 
     try:
         think_contents = re.findall(r"<think>(.*?)</think>", predict_str, re.DOTALL)
@@ -125,6 +127,14 @@ def compute_score(
                 return total_score, acc_score, format_score, other_score
             continue
 
+        zoom_match = re.match(r"zoom in frame\s+(\d+)", action)
+        if zoom_match:
+            frame_idx = int(zoom_match.group(1))
+            if frame_idx < 0 or frame_idx >= extra_info["total_frames"]:
+                return total_score, acc_score, format_score, other_score
+            zoom_used = True
+            continue
+
         return total_score, acc_score, format_score, other_score
 
     if expected_frame_in_next_action is not None:
@@ -141,6 +151,8 @@ def compute_score(
                 other_score += lambda_gfn
         if len(action_frame_pairs) > 1:
             other_score += lambda_cf
+        if zoom_used:
+            other_score += alpha_zoom
     total_score = acc_score + other_score
 
     return total_score, acc_score, format_score, other_score
