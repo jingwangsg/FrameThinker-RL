@@ -6,13 +6,6 @@ swanlab login --api-key <api_key>
 set -x
 ulimit -n 65535
 
-echo "Environment Variables:"
-echo "  MASTER_ADDR: $MASTER_ADDR"
-echo "  MASTER_PORT: $MASTER_PORT"
-echo "  WORLD_SIZE: $WORLD_SIZE"
-echo "  RANK: $RANK"
-echo "  NPROC_PER_NODE: $NPROC_PER_NODE"
-
 PROJECT_DIR="$(pwd)"
 
 BASE_DATA_DIR=$PROJECT_DIR/data/video_reason/Video-Holmes
@@ -28,11 +21,14 @@ VAL_FILES=${VAL_FILES:-$PROJECT_DIR/data/video_reason/Video-Holmes/test.parquet}
 PYTHONUNBUFFERED=1  python3 -m verl.trainer.main_ppo \
     "data.train_files=[${TRAIN_FILES}]" \
     "data.val_files=[${VAL_FILES}]" \
-    data.train_batch_size=32 \
-    data.val_batch_size=64 \
+    data.train_batch_size=64 \
+    data.val_batch_size=128 \
     data.max_prompt_length=8192 \
     data.max_response_length=8192 \
     data.media_dir=${MEDIA_DIA} \
+    data.media_reading_kwargs.num_frames=8 \
+    data.media_reading_kwargs.size=360 \
+    data.media_reading_kwargs.sampling_mode=uniform \
     data.return_raw_chat=True \
     data.filter_overlong_prompts=True \
     data.dataloader_num_workers=8 \
@@ -42,7 +38,7 @@ PYTHONUNBUFFERED=1  python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.model.path=${MODEL_PATH} \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.actor.optim.lr=1e-6 \
-    actor_rollout_ref.actor.ppo_mini_batch_size=32 \
+    actor_rollout_ref.actor.ppo_mini_batch_size=64 \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=2 \
     actor_rollout_ref.actor.use_kl_loss=False \
     actor_rollout_ref.actor.kl_loss_coef=0 \
@@ -72,7 +68,8 @@ PYTHONUNBUFFERED=1  python3 -m verl.trainer.main_ppo \
     trainer.logger=['console','swanlab'] \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes=1 \
-    trainer.save_freq=20 \
+    trainer.save_freq=60 \
+    trainer.max_actor_ckpt_to_keep=5 \
     trainer.val_before_train=True \
     trainer.test_freq=20 \
     trainer.project_name=${PROJECT_NAME} \
@@ -80,7 +77,8 @@ PYTHONUNBUFFERED=1  python3 -m verl.trainer.main_ppo \
     trainer.default_local_dir=${SAVE_CHECKPOINT_DIR}/${PROJECT_NAME}/${EXP_NAME} \
     +trainer.tensorboard_dir=${SAVE_CHECKPOINT_DIR}/logs/tensorboard \
     +trainer.rl_logging_board_dir=${SAVE_CHECKPOINT_DIR}/logs/rl_logging_board \
-    trainer.total_epochs=20 \
+    trainer.total_epochs=10 \
     custom_reward_function.path=verl/utils/reward_score/think_with_video_default.py \
     custom_reward_function.name=compute_score \
+    +custom_reward_function.reward_kwargs={} \
     $@

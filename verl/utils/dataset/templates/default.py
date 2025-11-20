@@ -1,10 +1,16 @@
+import numpy as np
 
 def get_system_prompt():
-    SYSTEM_PROMPT = """Please think about this question as if you were a human pondering deeply. Engage in an internal dialogue using expressions such as 'let me think', 'wait', 'Hmm', 'oh, I see', 'let's break it down', etc, or other natural language thought expressions. It's encouraged to include self-reflection or verification in the reasoning process. Provide your detailed reasoning between the <think> </think> tags, and then give your final answer between the <answer> </answer> tags."""
+    # SYSTEM_PROMPT = """Please think about this question as if you were a human pondering deeply. Engage in an internal dialogue using expressions such as 'let me think', 'wait', 'Hmm', 'oh, I see', 'let's break it down', etc, or other natural language thought expressions. It's encouraged to include self-reflection or verification in the reasoning process. Provide your detailed reasoning between the <think> </think> tags, and then give your final answer between the <answer> </answer> tags."""
+    SYSTEM_PROMPT = """You are an expert AI assistant that answers questions about a video by iteratively analyzing it. Provide your detailed reasoning between the <think> </think> tags, and then give your final answer (OPTION only) between the <answer> </answer> tags."""
     return SYSTEM_PROMPT
 
+# def get_image_placeholders(num_frames: int, total_frames: int) -> str:
+#     return f"<image>{num_frames}/{total_frames}"
+
 def get_image_placeholders(num_frames: int, total_frames: int) -> str:
-    return f"<image>{num_frames}/{total_frames}"
+    frame_indices = np.linspace(0, total_frames - 1, num_frames, dtype=int).tolist()
+    return "\n".join([f"frame {idx}:<image>" for idx in frame_indices])
 
 def apply_message_template(messages, **kwargs):
     assert (
