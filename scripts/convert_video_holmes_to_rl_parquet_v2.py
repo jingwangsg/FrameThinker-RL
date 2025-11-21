@@ -15,13 +15,11 @@ from typing import Dict, List, Any
 import io
 import os
 
-import decord
+from torchcodec.decoders import VideoDecoder
 import numpy as np
 from datasets import load_dataset, Dataset
 from PIL import Image
-
-# Set decord to use native bridge
-decord.bridge.set_bridge("native")
+from einops import rearrange
 
 
 def get_system_prompt(num_frames: int) -> str:
@@ -84,7 +82,7 @@ def extract_frames(
     video_path: str, num_frames: int = 8
 ) -> tuple[List[Dict], List[int]]:
     """
-    Extract evenly-spaced frames from video using decord.
+    Extract evenly-spaced frames from video using torchcodec.
 
     Args:
         video_path: Path to video file
@@ -95,20 +93,22 @@ def extract_frames(
         - frames: List of dicts with 'bytes' and 'path' keys
         - frame_indices: List of actual frame indices extracted
     """
-    # Open video with decord
-    vr = decord.VideoReader(video_path, ctx=decord.cpu(0))
-    total_frames = len(vr)
+    # Open video with torchcodec
+    decoder = VideoDecoder(video_path, num_ffmpeg_threads=0)
+    total_frames = len(decoder)
 
     # Calculate frame indices (evenly spaced, excluding last frame)
     frame_indices = np.linspace(0, total_frames - 1, num_frames, dtype=int).tolist()
 
-    frames = []
-    for idx in frame_indices:
-        # Get frame (already in RGB format)
-        frame = vr[idx].asnumpy()
+    # Get all frames at once
+    frames_tensor = decoder.get_frames_at(frame_indices).data
+    frames_tensor = rearrange(frames_tensor, 't c h w -> t h w c')
+    frames_array = frames_tensor.cpu().numpy()
 
-        # Convert to PIL Image
-        pil_image = Image.fromarray(frame)
+    frames = []
+    for i, idx in enumerate(frame_indices):
+        # Convert to PIL Image (already in RGB format)
+        pil_image = Image.fromarray(frames_array[i])
 
         # Convert to PNG bytes
         buffer = io.BytesIO()

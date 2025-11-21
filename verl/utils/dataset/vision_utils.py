@@ -18,15 +18,10 @@ from typing import Optional, Union
 import torch
 from PIL import Image
 from qwen_vl_utils import fetch_image, fetch_video
-# from torchcodec.decoders import VideoDecoder
-import decord
-from decord import VideoReader
+from torchcodec.decoders import VideoDecoder
 import numpy as np
 from einops import rearrange
 from torchvision.transforms import Resize
-
-# set default output to torch
-decord.bridge.set_bridge("torch")
 
 def compute_target_size(width: int, height: int, size: int) -> tuple[int, int]:
     """
@@ -37,30 +32,15 @@ def compute_target_size(width: int, height: int, size: int) -> tuple[int, int]:
     else:
         return int(size * width / height), size
 
-# def extract_frames(video_path: str, num_frames: int = 8, size: int = 360) -> list[dict]:
-#     decoder = VideoDecoder(video_path, num_ffmpeg_threads=0)
-#     total_frames = decoder.metadata.num_frames
-
-#     # Calculate frame indices (evenly spaced, excluding last frame)
-#     frame_indices = np.linspace(0, total_frames - 1, num_frames, dtype=int).tolist()
-
-#     frames = decoder.get_frames_at(frame_indices).data
-#     frames = Resize(size)(frames)
-#     frames = rearrange(frames, 't c h w -> t h w c').cpu().numpy()
-
-#     frames_pil = [Image.fromarray(frame) for frame in frames]
-
-#     return frames_pil, frame_indices
 
 def extract_frames(video_path: str, num_frames: int = 8, size: int = 360) -> list[dict]:
-    decoder = VideoReader(video_path)
+    decoder = VideoDecoder(video_path, num_ffmpeg_threads=0)
     total_frames = len(decoder)
 
     # Calculate frame indices (evenly spaced, excluding last frame)
     frame_indices = np.linspace(0, total_frames - 1, num_frames, dtype=int).tolist()
 
-    frames = decoder.get_batch(frame_indices)
-    frames = rearrange(frames, 't h w c -> t c h w')
+    frames = decoder.get_frames_at(frame_indices).data
     frames = Resize(size)(frames)
     frames = rearrange(frames, 't c h w -> t h w c').cpu().numpy()
 
