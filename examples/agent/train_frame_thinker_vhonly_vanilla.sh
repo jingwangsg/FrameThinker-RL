@@ -1,7 +1,7 @@
 #!/bin/bash
 # run on 8xH100
 # make sure your current working directory is the root of the project
-swanlab login --api-key <api_key>
+swanlab login --api-key iPPnOFirR3dXCBgOBPqiB
 
 set -x
 ulimit -n 65535
@@ -10,7 +10,7 @@ PROJECT_DIR="$(pwd)"
 
 BASE_DATA_DIR=$PROJECT_DIR/data/video_reason/Video-Holmes
 PROJECT_NAME=video_holmes_rl
-EXP_NAME=${EXP_NAME:-framethinker_vonly_vanilla}
+EXP_NAME=${EXP_NAME:-framethinker_vonly_vanilla_16frames}
 SAVE_CHECKPOINT_DIR=$PROJECT_DIR/ckpt/video_reason
 MODEL_PATH=${MODEL_PATH:-$PROJECT_DIR/model_weights/Qwen2.5-VL-7B-Instruct}
 MEDIA_DIA=${MEDIA_DIA:-$PROJECT_DIR/data/video_reason/}
@@ -23,10 +23,10 @@ PYTHONUNBUFFERED=1  python3 -m verl.trainer.main_ppo \
     "data.val_files=[${VAL_FILES}]" \
     data.train_batch_size=64 \
     data.val_batch_size=128 \
-    data.max_prompt_length=8192 \
+    data.max_prompt_length=16384 \
     data.max_response_length=8192 \
     data.media_dir=${MEDIA_DIA} \
-    data.media_reading_kwargs.num_frames=8 \
+    data.media_reading_kwargs.num_frames=16 \
     data.media_reading_kwargs.size=360 \
     data.media_reading_kwargs.sampling_mode=uniform \
     data.return_raw_chat=True \
@@ -37,7 +37,7 @@ PYTHONUNBUFFERED=1  python3 -m verl.trainer.main_ppo \
     algorithm.kl_ctrl.kl_coef=0.0 \
     actor_rollout_ref.model.path=${MODEL_PATH} \
     actor_rollout_ref.model.use_remove_padding=True \
-    actor_rollout_ref.actor.optim.lr=1e-6 \
+    actor_rollout_ref.actor.optim.lr=3e-6 \
     actor_rollout_ref.actor.ppo_mini_batch_size=64 \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=2 \
     actor_rollout_ref.actor.use_kl_loss=False \
@@ -68,7 +68,7 @@ PYTHONUNBUFFERED=1  python3 -m verl.trainer.main_ppo \
     trainer.logger=['console','swanlab'] \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes=1 \
-    trainer.save_freq=60 \
+    trainer.save_freq=100 \
     trainer.max_actor_ckpt_to_keep=5 \
     trainer.val_before_train=True \
     trainer.test_freq=20 \

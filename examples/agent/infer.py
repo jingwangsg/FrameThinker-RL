@@ -9,7 +9,8 @@ import sglang as sgl
 import argparse
 from collections import defaultdict
 from itertools import combinations
-import decord
+from torchcodec.decoders import VideoDecoder
+from einops import rearrange
 
 CONFIG = {
     # "MODEL_PATH": "/mnt/aws-lfs-01/shared/checkpoints/jingwang/video_reason/sft/qwen2_5vl_7b_sft_full_framethinker_base/",
@@ -118,9 +119,9 @@ def parse_model_response(response):
 
 def get_video_metadata(video_path):
     try:
-        vr = decord.VideoReader(video_path, ctx=decord.cpu(0), num_threads=1)
-        frame_count = len(vr)
-        del vr
+        decoder = VideoDecoder(video_path, num_ffmpeg_threads=0)
+        frame_count = len(decoder)
+        del decoder
         cap = cv2.VideoCapture(video_path)
         fps = cap.get(cv2.CAP_PROP_FPS)
         cap.release()
@@ -150,8 +151,10 @@ def extract_frames(video_path, frame_indices, output_dir, max_width, max_height)
     os.makedirs(output_dir, exist_ok=True)
     saved_paths = []
     try:
-        vr = decord.VideoReader(video_path, ctx=decord.cpu(0), num_threads=1)
-        frames_array = vr.get_batch(frame_indices).asnumpy()
+        decoder = VideoDecoder(video_path, num_ffmpeg_threads=0)
+        frames_tensor = decoder.get_frames_at(frame_indices).data
+        frames_tensor = rearrange(frames_tensor, 't c h w -> t h w c')
+        frames_array = frames_tensor.cpu().numpy()
         for i, frame_idx in enumerate(frame_indices):
             frame_img_bgr = cv2.cvtColor(frames_array[i], cv2.COLOR_RGB2BGR)
             scaled_frame = scale_down_preserving_aspect_ratio(
@@ -162,7 +165,7 @@ def extract_frames(video_path, frame_indices, output_dir, max_width, max_height)
             output_path = os.path.join(output_dir, f"frame_{frame_idx}.jpg")
             cv2.imwrite(output_path, scaled_frame)
             saved_paths.append(output_path)
-        del vr
+        del decoder
     except Exception as e:
         print(f"!!!!!! AN EXCEPTION OCCURRED in extract_frames !!!!!!")
         print(f"Video Path: {video_path}")

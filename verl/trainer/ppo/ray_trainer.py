@@ -1388,6 +1388,12 @@ class RayPPOTrainer:
                         # update actor
                         with _timer("update_actor", timing_raw):
                             actor_output = self.actor_rollout_wg.update_actor(batch)
+
+                        # Extract per-token data from actor_output.batch (already concatenated by DataProto.concat)
+                        if actor_output.batch is not None and 'pg_losses' in actor_output.batch:
+                            batch.batch['pg_losses'] = actor_output.batch['pg_losses']
+                            batch.batch['clipped_mask'] = actor_output.batch['clipped_mask']
+
                         actor_output_metrics = reduce_metrics(
                             actor_output.meta_info["metrics"]
                         )

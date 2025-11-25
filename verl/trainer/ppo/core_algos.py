@@ -422,6 +422,10 @@ def compute_policy_loss(
             the estimated KL divergence between the latest updating policy and the old sampling policy
         pg_clipfrac_lower: (float)
             the fraction of policy gradient loss being clipped when the advantage is negative
+        pg_losses: `(torch.Tensor)`
+            shape: (bs, response_length), per-token policy gradient loss
+        clipped_mask: `(torch.Tensor)`
+            shape: (bs, response_length), boolean mask indicating which tokens were clipped
     """
     assert clip_ratio_c > 1.0, (
         "The lower bound of the clip_ratio_c for dual-clip PPO should be greater than 1.0,"
@@ -454,7 +458,15 @@ def compute_policy_loss(
     pg_losses = torch.where(advantages < 0, clip_pg_losses2, clip_pg_losses1)
     pg_loss = agg_loss(loss_mat=pg_losses, loss_mask=response_mask, loss_agg_mode=loss_agg_mode)
 
-    return pg_loss, pg_clipfrac, ppo_kl, pg_clipfrac_lower
+    # Return per-token information for metrics
+    # A token is clipped if its gradient is stopped by any clipping operation
+    # Only consider valid response tokens (response_mask == 1)
+    first_clip_mask = torch.gt(pg_losses2, pg_losses1)  # First-layer clipping (ratio clipping)
+    second_clip_mask = torch.gt(clip_pg_losses1, pg_losses3) * (advantages < 0)  # Second-layer clipping (dual-clip)
+    clipped_mask = first_clip_mask | second_clip_mask
+    clipped_mask = clipped_mask & response_mask.bool()
+
+    return pg_loss, pg_clipfrac, ppo_kl, pg_clipfrac_lower, pg_losses, clipped_mask
 
 
 def compute_entropy_loss(logits, response_mask):

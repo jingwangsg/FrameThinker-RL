@@ -24,6 +24,7 @@ import torch
 import torch.distributed
 from codetiming import Timer
 from omegaconf import DictConfig, open_dict
+from tensordict import TensorDict
 from torch.distributed.device_mesh import init_device_mesh
 
 import verl.utils.torch_functional as verl_F
@@ -526,8 +527,21 @@ class ActorRolloutRefWorker(Worker):
             lr = self.actor_lr_scheduler.get_last_lr()[0]
             metrics["actor/lr"] = lr
 
+            # Extract per-token data from metrics to batch for proper concatenation
+            batch_tensor_dict = None
+            if 'pg_losses_batch' in metrics:
+                pg_losses = metrics.pop('pg_losses_batch')
+                clipped_mask = metrics.pop('clipped_mask_batch')
+                batch_tensor_dict = TensorDict(
+                    {
+                        'pg_losses': pg_losses,
+                        'clipped_mask': clipped_mask
+                    },
+                    batch_size=pg_losses.shape[0]
+                )
+
             # TODO: here, we should return all metrics
-            output = DataProto(meta_info={"metrics": metrics})
+            output = DataProto(batch=batch_tensor_dict, meta_info={"metrics": metrics})
 
             output = self.ulysses_sharding_manager.postprocess_data(data=output)
             output = output.to("cpu")

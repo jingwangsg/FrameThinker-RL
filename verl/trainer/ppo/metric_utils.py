@@ -148,6 +148,48 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True) -> Dict[str,
         "prompt_length/min": torch.min(prompt_length).detach().item(),
         "prompt_length/clip_ratio": torch.mean(torch.eq(prompt_length, max_prompt_length).float()).detach().item(),
     }
+
+    # Compute positive/negative token loss statistics
+    if 'pg_losses' in batch.batch.keys() and advantages is not None and response_mask is not None:
+        pg_losses = batch.batch.pop('pg_losses')
+        clipped_mask = batch.batch.pop('clipped_mask', None)
+
+        # Get action_mask to exclude tool returns
+        if 'action_mask' in batch.batch:
+            action_mask = batch.batch['action_mask'][:, -batch.batch['responses'].shape[-1]:]
+            valid_mask = response_mask.bool() & action_mask.bool()
+        else:
+            valid_mask = response_mask.bool()
+
+        # Separate positive and negative advantages
+        positive_mask = (advantages > 0) & valid_mask
+        negative_mask = (advantages <= 0) & valid_mask
+
+        # Exclude clipped tokens
+        if clipped_mask is not None:
+            positive_unclipped_mask = positive_mask & (~clipped_mask.bool())
+            negative_unclipped_mask = negative_mask & (~clipped_mask.bool())
+        else:
+            positive_unclipped_mask = positive_mask
+            negative_unclipped_mask = negative_mask
+
+        # Count tokens
+        total_tokens = valid_mask.sum().item()
+        positive_tokens = positive_mask.sum().item()
+        negative_tokens = negative_mask.sum().item()
+
+        # Extract losses
+        positive_losses = torch.masked_select(pg_losses, positive_unclipped_mask)
+        negative_losses = torch.masked_select(pg_losses, negative_unclipped_mask)
+
+        # Compute metrics
+        metrics.update({
+            "actor/positive_tokens_ratio": positive_tokens / total_tokens * 100 if total_tokens > 0 else 0.0,
+            "actor/negative_tokens_ratio": negative_tokens / total_tokens * 100 if total_tokens > 0 else 0.0,
+            "actor/positive_loss_mean": torch.mean(positive_losses).item() if len(positive_losses) > 0 else 0.0,
+            "actor/negative_loss_mean": torch.mean(negative_losses).item() if len(negative_losses) > 0 else 0.0,
+        })
+
     return metrics
 
 
@@ -197,6 +239,40 @@ def compute_agent_metrics(batch: DataProto):
         "agent/tool_call_max": torch.max(tool_cnt_tensor).item(),
         "agent/tool_call_min": torch.min(tool_cnt_tensor).item(),
     })
+
+    # Count responses with/without tool calls
+    responses_with_tools = (tool_cnt_tensor > 0).sum().item()
+    responses_without_tools = (tool_cnt_tensor == 0).sum().item()
+    total_responses = len(tool_cnt_tensor)
+
+    metrics.update({
+        "agent/responses_with_tools": responses_with_tools / total_responses if total_responses > 0 else 0.0,
+        "agent/responses_without_tools": responses_without_tools / total_responses if total_responses > 0 else 0.0,
+    })
+
+    # Track correct answers with/without tool calls
+    if 'acc_tensor' in batch.batch.keys():
+        acc_tensor = batch.batch['acc_tensor']  # Don't pop, other metrics need it
+        # Sum over sequence length dimension to get per-response accuracy
+        acc_per_response = acc_tensor.sum(-1, keepdims=True).detach().cpu()
+
+        # Boolean masks for correct answers
+        correct_mask = acc_per_response > 0  # 1.0 for correct, 0.0 for incorrect
+
+        # Combine accuracy with tool usage
+        correct_with_tools = torch.logical_and(correct_mask, tool_cnt_tensor > 0).sum().item()
+        correct_without_tools = torch.logical_and(correct_mask, tool_cnt_tensor == 0).sum().item()
+
+        # Also compute incorrect counts for completeness
+        incorrect_with_tools = torch.logical_and(~correct_mask, tool_cnt_tensor > 0).sum().item()
+        incorrect_without_tools = torch.logical_and(~correct_mask, tool_cnt_tensor == 0).sum().item()
+
+        metrics.update({
+            "agent/correct_with_tools_ratio": correct_with_tools / total_responses if total_responses > 0 else 0.0,
+            "agent/correct_without_tools_ratio": correct_without_tools / total_responses if total_responses > 0 else 0.0,
+            "agent/incorrect_with_tools_ratio": incorrect_with_tools / total_responses if total_responses > 0 else 0.0,
+            "agent/incorrect_without_tools_ratio": incorrect_without_tools / total_responses if total_responses > 0 else 0.0,
+        })
 
     # Per-tool-type metrics (using hierarchical naming for grouped visualization)
     if 'choose_frames_cnt' in batch.batch.keys():

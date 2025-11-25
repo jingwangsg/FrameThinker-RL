@@ -304,6 +304,10 @@ class DataParallelPPOActor(BasePPOActor):
 
         metrics = {}
         for epoch in range(self.config.ppo_epochs):
+            # Initialize accumulators only for first epoch
+            if epoch == 0:
+                accumulated_pg_losses = []
+                accumulated_clipped_masks = []
             for batch_idx, data in enumerate(dataloader):
                 # split batch into micro_batches
                 mini_batch = data
@@ -358,7 +362,7 @@ class DataParallelPPOActor(BasePPOActor):
                         micro_batch=data, temperature=temperature, calculate_entropy=calculate_entropy
                     )
 
-                    pg_loss, pg_clipfrac, ppo_kl, pg_clipfrac_lower = compute_policy_loss(
+                    pg_loss, pg_clipfrac, ppo_kl, pg_clipfrac_lower, pg_losses, clipped_mask = compute_policy_loss(
                         old_log_prob=old_log_prob,
                         log_prob=log_prob,
                         advantages=advantages,
@@ -369,6 +373,11 @@ class DataParallelPPOActor(BasePPOActor):
                         clip_ratio_c=clip_ratio_c,
                         loss_agg_mode=loss_agg_mode,
                     )
+
+                    # Collect per-token data only in first epoch
+                    if epoch == 0:
+                        accumulated_pg_losses.append(pg_losses.detach().cpu())
+                        accumulated_clipped_masks.append(clipped_mask.detach().cpu())
 
                     if entropy_coeff != 0:
                         entropy_loss = agg_loss(loss_mat=entropy, loss_mask=response_mask, loss_agg_mode=loss_agg_mode)
@@ -411,4 +420,10 @@ class DataParallelPPOActor(BasePPOActor):
                 data = {"actor/grad_norm": grad_norm.detach().item()}
             append_to_dict(metrics, data)
         self.actor_optimizer.zero_grad()
+
+        # Package per-token data for batch storage
+        if accumulated_pg_losses:
+            metrics['pg_losses_batch'] = torch.cat(accumulated_pg_losses, dim=0)
+            metrics['clipped_mask_batch'] = torch.cat(accumulated_clipped_masks, dim=0)
+
         return metrics
